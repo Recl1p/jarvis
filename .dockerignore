@@ -1,0 +1,25 @@
+# Only Dockerfile's COPY sources matter: image/, desktop/, persona/, launcher/, connector/, voices/,
+# deployment/*-requirements.txt
+.git
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/node_modules
+**/.env
+**/auth.json
+**/*.bak*
+**/.DS_Store
+*.tar.gz
+docs
+scripts
+data
+HANDOFF.md
+README.md
+INSTALL.md
+install
+.github
+compose*.yaml
+containerplan.md
+setup.sh
+deployment/MIGRATION.md
+tests

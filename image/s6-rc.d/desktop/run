@@ -1,0 +1,4 @@
+#!/command/with-contenv sh
+# The browser desktop Hermes drives (noVNC on :6080). Off with JARVIS_DESKTOP=0.
+if [ "${JARVIS_DESKTOP:-1}" = 0 ]; then exec sleep infinity; fi
+exec s6-setuidgid hermes /opt/jarvis/desktop/start.sh

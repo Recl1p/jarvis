@@ -1,0 +1,4 @@
+#!/command/with-contenv sh
+# The JARVIS launcher (setup screen + proxy on :8642). It runs a managed Hermes gateway as its own child.
+cd "$HERMES_HOME" || exit 1
+exec s6-setuidgid hermes python3 -m jarvis_launcher

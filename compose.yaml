@@ -1,0 +1,48 @@
+# JARVIS: dashboard, voice and browser desktop for Hermes Agent. Hermes is not in the image: open
+# http://<this server>:8642, create JARVIS's password, and the setup screen installs Hermes (with your consent) or
+# connects the Hermes you already have.
+#
+#   docker compose up -d          (or ./setup.sh)        TrueNAS / ZimaOS: see INSTALL.md (paste-in app YAML)
+#
+# Settings can go in a .env next to this file (copy .env.example). Everything JARVIS and Hermes keep is in the data
+# volume. Building the image yourself instead: docker compose -f compose.yaml -f compose.build.yaml up -d --build
+name: jarvis
+services:
+  jarvis:
+    image: ${JARVIS_IMAGE:-ghcr.io/recl1p/jarvis:2}
+    container_name: ${JARVIS_CONTAINER_NAME:-jarvis}
+    ports:
+      # Setup screen, dashboard (/vesper) and browser desktop (/desktop/), all behind JARVIS's password.
+      - "${JARVIS_BIND:-0.0.0.0}:${JARVIS_PORT:-8642}:8642"
+    volumes:
+      - ${JARVIS_DATA:-jarvis-data}:/opt/data
+      # Optional: let JARVIS find the Hermes on this computer and read its API key (I already have Hermes):
+      # - ~/.hermes:/hermes-host:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets JARVIS reach a Hermes running on this computer
+    environment:
+      TZ: ${TZ:-UTC}
+      # The key that unlocks the JARVIS, Ultron and Cortana voices built into the image (from whoever shared this).
+      JARVIS_VOICE_KEY: ${JARVIS_VOICE_KEY:-}
+      # Optional: set the password here instead of on the first visit.
+      JARVIS_PASSWORD: ${JARVIS_PASSWORD:-}
+      JARVIS_SCAN_SUBNETS: ${JARVIS_SCAN_SUBNETS:-}
+      JARVIS_HERMES_URLS: ${JARVIS_HERMES_URLS:-}
+      JARVIS_PUBLIC_URL: ${JARVIS_PUBLIC_URL:-}
+      JARVIS_AUTO_UPDATE: ${JARVIS_AUTO_UPDATE:-1}
+      JARVIS_AUTO_UPDATE_HOUR: ${JARVIS_AUTO_UPDATE_HOUR:-4}
+    shm_size: 1gb
+    stop_grace_period: 90s
+    restart: unless-stopped
+  # Optional local model engine: `docker compose --profile local-model up -d`, then in Hermes use the custom endpoint
+  # http://ollama:11434/v1 (docs/CONNECTING-MODELS.md, section 10). CPU by default; a GPU needs a host-specific override.
+  ollama:
+    profiles: ["local-model"]
+    image: docker.io/ollama/ollama:0.30.10@sha256:bfc9c6d53cc6989aa5131a6fde6b162b2802d4d337657f3253b5f69579bddeee
+    container_name: ${JARVIS_OLLAMA_CONTAINER_NAME:-jarvis-ollama}
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+volumes:
+  jarvis-data:
+  ollama-data:

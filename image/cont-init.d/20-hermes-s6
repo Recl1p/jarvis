@@ -1,0 +1,18 @@
+#!/command/with-contenv sh
+# Hermes supervises its own gateway as an s6 service it registers in /run/service (like Hermes's own image), so the
+# hermes user needs the scan directory and its control files. On a container restart, Hermes's boot reconciler puts
+# back the gateways that were running (it reads the desired state Hermes saved; a stopped gateway stays stopped).
+set -eu
+chown hermes:hermes /run/service 2>/dev/null || true
+if [ -d /run/service/.s6-svscan ]; then
+    for entry in control lock; do
+        [ -e "/run/service/.s6-svscan/$entry" ] && chown hermes:hermes "/run/service/.s6-svscan/$entry" 2>/dev/null || true
+    done
+fi
+hermes_bin="${HERMES_HOME:-/opt/data}/.local/bin/hermes"
+if [ -x "$hermes_bin" ]; then
+    # This image's connector first, so the gateway the reconciler starts loads it (not the one before an update).
+    s6-setuidgid hermes python3 -m jarvis_launcher.prestart || true
+    s6-setuidgid hermes "$hermes_bin" --run-module hermes_cli.container_boot \
+        || echo "[jarvis] Hermes's boot reconciler failed; the launcher starts the gateway itself" >&2
+fi

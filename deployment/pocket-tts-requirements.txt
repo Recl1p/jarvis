@@ -1,0 +1,6 @@
+# Pocket TTS (the dashboard's fast local voice, HANDOFF 32), installed into the OmniVoice interpreter with
+# omnivoice-requirements.txt as constraints, so the two share torch and every other package. Resolved under Hermes'
+# 14-day exclude-newer quarantine like the OmniVoice pins.
+einops==0.8.2
+pocket-tts==3.3.0
+sentencepiece==0.2.2

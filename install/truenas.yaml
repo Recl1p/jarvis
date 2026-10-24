@@ -1,0 +1,25 @@
+# JARVIS for TrueNAS SCALE (24.10 "Electric Eel" or newer).
+# Apps -> Discover Apps -> the three-dot menu -> Install via YAML. Name it "jarvis", paste this whole file, Save.
+# Then open http://<your TrueNAS address>:8642 and create JARVIS's password. Full guide: INSTALL.md.
+services:
+  jarvis:
+    image: ghcr.io/recl1p/jarvis:2
+    container_name: jarvis
+    ports:
+      # Setup screen, dashboard (/vesper) and browser desktop (/desktop/), all behind JARVIS's password.
+      - "8642:8642"
+    volumes:
+      # Everything JARVIS and Hermes keep. To keep it on a dataset of your own instead (easier to snapshot and back
+      # up), create one (for example tank/apps/jarvis) and use its path:   - /mnt/tank/apps/jarvis:/opt/data
+      - jarvis-data:/opt/data
+    environment:
+      TZ: America/New_York            # your time zone (cron jobs and reminders run on it)
+      # Unlocks the JARVIS, Ultron and Cortana voices built into the image. Leave it as you received it.
+      JARVIS_VOICE_KEY: "@JARVIS_VOICE_KEY@"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    shm_size: 1gb
+    stop_grace_period: 90s
+    restart: unless-stopped
+volumes:
+  jarvis-data:

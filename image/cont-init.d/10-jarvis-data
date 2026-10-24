@@ -1,0 +1,19 @@
+#!/command/with-contenv sh
+# The data volume holds Hermes (once installed) and JARVIS's state; both run as the hermes user.
+set -eu
+home="${HERMES_HOME:-/opt/data}"
+# This runs as root on a volume the hermes user (and so the agent) can write: never follow a link it may have put in
+# place of these folders, or root would hand the link's target (/etc, say) to hermes.
+for dir in "$home/jarvis" "$home/logs"; do
+    if [ -L "$dir" ]; then
+        echo "[jarvis] $dir is a symbolic link; moving it aside" >&2
+        mv "$dir" "$dir.link-$(date +%s)"
+    fi
+done
+mkdir -p "$home/jarvis" "$home/logs"
+# A new volume (or a bind mount made by root) belongs to root; hand its top level to hermes. Existing files from the
+# old JARVIS image are already uid 10001, so this never walks a large tree.
+for dir in "$home" "$home/jarvis" "$home/logs"; do
+    [ "$(stat -c %u "$dir")" = "$(id -u hermes)" ] || chown -h hermes:hermes "$dir"
+done
+chmod 700 "$home/jarvis"

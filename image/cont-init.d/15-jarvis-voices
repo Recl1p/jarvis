@@ -1,0 +1,41 @@
+#!/command/with-contenv sh
+# The image's voice pack (voices/jarvis-voices.enc: Pocket TTS voice states for JARVIS, Ultron and Cortana) is
+# encrypted. JARVIS_VOICE_KEY, from the compose file the owner shares, unlocks it into the data volume, where the
+# dashboard's Pocket TTS speaks it (connector/jarvis/vesper_voice.py, pack_voice). Without the key, or with a wrong one,
+# JARVIS starts as usual with its original voices. Runs once per pack: a marker records which pack is unlocked.
+set -u
+# All of it runs as hermes: the data volume is the hermes user's, and root must not follow links planted in it.
+if [ "$(id -u)" = 0 ]; then
+    exec s6-setuidgid hermes sh "$0" "$@"
+fi
+pack="${JARVIS_VOICE_PACK:-/opt/jarvis/voices/jarvis-voices.enc}"
+home="${HERMES_HOME:-/opt/data}"
+dest="$home/vesper-voices/pack"
+log() { echo "[jarvis-voices] $*"; }
+
+[ -f "$pack" ] || exit 0
+if [ -z "${JARVIS_VOICE_KEY:-}" ]; then
+    log "no JARVIS_VOICE_KEY: JARVIS uses its original voices"
+    exit 0
+fi
+stamp=$(sha256sum "$pack" | cut -d' ' -f1)
+if [ -f "$dest/.pack" ] && [ "$(cat "$dest/.pack")" = "$stamp" ]; then
+    exit 0
+fi
+
+umask 077
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+if ! openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in "$pack" -out "$tmp/pack.tar" \
+        -pass env:JARVIS_VOICE_KEY 2>/dev/null \
+    || ! tar -xf "$tmp/pack.tar" -C "$tmp" --no-same-owner --no-same-permissions voices 2>/dev/null \
+    || ! (cd "$tmp/voices" && sha256sum -c --quiet SHA256SUMS >/dev/null 2>&1); then
+    log "JARVIS_VOICE_KEY doesn't unlock this image's voice pack: JARVIS uses its original voices" >&2
+    exit 0
+fi
+
+mkdir -p "$dest"
+rm -f "$dest"/*.safetensors
+cp "$tmp"/voices/*.safetensors "$dest"/
+printf '%s\n' "$stamp" > "$dest/.pack"
+log "voice pack unlocked: $(ls "$dest" | grep -c '\.safetensors$') voices"

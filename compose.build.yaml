@@ -1,0 +1,14 @@
+# Build the JARVIS image from this folder instead of pulling the published one:
+#
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build        (./setup.sh --build does this)
+#
+# JARVIS_LOCAL_VOICES: pocket (default, as published) = Pocket TTS; 1 = also OmniVoice (about 9 GB more, x86-64
+# recommended); 0 = no self-hosted voices (ElevenLabs, Microsoft Edge and Piper only).
+services:
+  jarvis:
+    image: ${JARVIS_IMAGE:-localhost/jarvis:local}
+    pull_policy: build
+    build:
+      context: .
+      args:
+        JARVIS_LOCAL_VOICES: ${JARVIS_LOCAL_VOICES:-pocket}

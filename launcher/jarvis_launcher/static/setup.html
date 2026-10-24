@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>JARVIS Setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@300;400;500;600&display=swap">
+<link rel="stylesheet" href="/jarvis/static/setup.css">
+<link rel="icon" href="/jarvis/static/icon.svg" type="image/svg+xml">
+</head>
+<body>
+<main class="shell">
+  <header class="brand">
+    <div class="core" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div>
+      <div class="kicker">J.A.R.V.I.S.</div>
+      <h1 id="title">Starting up…</h1>
+    </div>
+  </header>
+
+  <!-- 1. Not set up: pick a path -->
+  <section id="view-welcome" class="view" hidden>
+    <p class="lead">JARVIS is a dashboard and voice for <b>Hermes Agent</b>, Nous Research's open-source AI agent.
+      Hermes is the brain: it does the thinking, remembers, and runs your tools. JARVIS doesn't include it, so it needs a
+      Hermes to talk to.</p>
+    <p id="previous-data" class="note" hidden>Found earlier JARVIS data in this volume (settings, memories, logins).
+      Installing Hermes keeps all of it.</p>
+    <div class="choices">
+      <button class="choice primary" data-go="install">
+        <span class="choice-title">Install Hermes for me</span>
+        <span class="choice-sub">Recommended. JARVIS downloads the official installer, sets Hermes up as JARVIS and keeps it updated.</span>
+      </button>
+      <button class="choice" data-go="existing">
+        <span class="choice-title">I already have Hermes</span>
+        <span class="choice-sub">Connect the Hermes you run on this or another computer.</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- 2a. Install consent -->
+  <section id="view-install" class="view" hidden>
+    <p class="lead">Here is exactly what happens when you continue:</p>
+    <ol class="facts">
+      <li>JARVIS downloads Nous Research's official installer from <a id="c-installer" target="_blank" rel="noopener"></a>
+        and runs it inside this container.</li>
+      <li>It installs <b>Hermes Agent</b> (<a id="c-repo" target="_blank" rel="noopener">source</a>,
+        <a id="c-license" target="_blank" rel="noopener">MIT license</a>) from the <b id="c-channel"></b> release channel into
+        <code id="c-dir"></code>, with its own Python, Node and tools. That's about 1.5&nbsp;GB, and takes a few minutes.</li>
+      <li>Hermes keeps its settings, memories and chats in <code id="c-home"></code>, the same volume as JARVIS, so updating
+        or replacing the JARVIS container keeps everything.</li>
+      <li>JARVIS then sets Hermes up for itself: it turns on Hermes's API server (only reachable inside this container),
+        installs the JARVIS connector plugin, and points Hermes's browser at the browser desktop.</li>
+    </ol>
+    <label class="check"><input type="checkbox" id="opt-persona" checked>
+      <span><b>Give Hermes the JARVIS personality.</b> Hermes answers as JARVIS everywhere, Telegram included.
+        You can change it later.</span></label>
+    <label class="check"><input type="checkbox" id="opt-auto" checked>
+      <span><b>Keep Hermes updated automatically.</b> Once a day JARVIS installs new stable Hermes releases. If an update
+        breaks the dashboard, it rolls back by itself.</span></label>
+    <label class="check consent"><input type="checkbox" id="opt-accept">
+      <span>I agree to download and install Hermes Agent from Nous Research into this container.</span></label>
+    <div class="row">
+      <button class="btn ghost" data-go="welcome">Back</button>
+      <button class="btn" id="btn-install" disabled>Download and install</button>
+    </div>
+  </section>
+
+  <!-- 2b. Install progress -->
+  <section id="view-progress" class="view" hidden>
+    <div class="step-line"><span class="spinner" id="progress-spin"></span><span id="progress-step">Starting…</span></div>
+    <pre class="log" id="progress-log" aria-live="polite"></pre>
+    <p class="error" id="progress-error" hidden></p>
+    <div class="row">
+      <button class="btn ghost" id="btn-progress-back" data-go="welcome" hidden>Back</button>
+      <button class="btn" id="btn-progress-retry" hidden>Try again</button>
+      <a class="btn" id="btn-open" href="/vesper" hidden>Continue to JARVIS</a>
+    </div>
+  </section>
+
+  <!-- 3. Connect an existing Hermes -->
+  <section id="view-existing" class="view" hidden>
+    <div class="card">
+      <h2>1 · Find it</h2>
+      <p>JARVIS looks on this computer and your network for a Hermes with its API server on.
+        <span class="dim">To connect one on this computer without typing a key, mount its <code>~/.hermes</code> into the
+        container (see compose.yaml).</span></p>
+      <div class="row left"><button class="btn small" id="btn-detect">Find my Hermes</button>
+        <span class="dim" id="detect-status"></span></div>
+      <ul class="candidates" id="candidates"></ul>
+    </div>
+
+    <div class="card">
+      <h2>2 · Or enter it</h2>
+      <div class="field"><label for="f-url">Hermes API server address</label>
+        <input id="f-url" placeholder="http://192.168.1.20:8642" autocomplete="off" spellcheck="false"></div>
+      <div class="field"><label for="f-key">API key <span class="dim">(API_SERVER_KEY in that Hermes's ~/.hermes/.env)</span></label>
+        <input id="f-key" type="password" autocomplete="off" spellcheck="false"></div>
+      <div class="row left">
+        <button class="btn small ghost" id="btn-test">Test connection</button>
+        <button class="btn small" id="btn-connect">Connect</button>
+      </div>
+      <ul class="checks" id="test-results"></ul>
+    </div>
+
+    <div class="card">
+      <h2>3 · Or let your Hermes connect itself</h2>
+      <p>Copy this into a chat with your Hermes. It installs the JARVIS connector, turns on its API server and sends the
+        address and key here: no copying keys around. The code inside works once, for an hour.</p>
+      <div class="prompt-box">
+        <textarea id="prompt" readonly rows="9"></textarea>
+        <div class="row left"><button class="btn small" id="btn-copy-prompt">Copy prompt</button>
+          <button class="btn small ghost" id="btn-new-prompt">New code</button>
+          <span class="dim" id="copy-status"></span></div>
+      </div>
+      <details><summary>Prefer a terminal? Run this on the computer Hermes is on</summary>
+        <pre class="cmd" id="command"></pre>
+        <button class="btn small ghost" id="btn-copy-cmd">Copy command</button></details>
+      <div class="pair" id="pair-status" hidden></div>
+    </div>
+    <div class="row"><button class="btn ghost" data-go="welcome">Back</button></div>
+  </section>
+
+  <!-- 4. Set up: status and settings -->
+  <section id="view-connected" class="view" hidden>
+    <div class="status-grid">
+      <div><div class="label">Hermes</div><div id="s-mode"></div></div>
+      <div><div class="label">Address</div><div id="s-url" class="mono"></div></div>
+      <div><div class="label">Version</div><div id="s-version"></div></div>
+      <div><div class="label">State</div><div id="s-health"></div></div>
+      <div><div class="label">Connector</div><div id="s-connector"></div></div>
+    </div>
+    <div class="row left">
+      <a class="btn" href="/vesper">Open JARVIS</a>
+      <button class="btn ghost" id="btn-retest">Test connection</button>
+    </div>
+    <ul class="checks" id="retest-results"></ul>
+
+    <div class="card" id="updates-card" hidden>
+      <h2>Updates</h2>
+      <label class="check"><input type="checkbox" id="u-auto"><span>Install new stable Hermes releases automatically,
+        every day at <select id="u-hour"></select>. A release that breaks the dashboard is rolled back.</span></label>
+      <div class="row left">
+        <button class="btn small ghost" id="btn-check">Check now</button>
+        <button class="btn small" id="btn-update">Update now</button>
+        <span class="dim" id="u-status"></span>
+      </div>
+      <pre class="log small" id="u-log" hidden></pre>
+    </div>
+
+    <div class="card" id="persona-card" hidden>
+      <h2>Personality</h2>
+      <p>Hermes answers as JARVIS on every channel once the JARVIS personality is in its SOUL.md.</p>
+      <div class="row left"><button class="btn small ghost" id="btn-persona">Apply the JARVIS personality</button>
+        <span class="dim" id="persona-status"></span></div>
+    </div>
+
+    <form class="card" id="password-card" hidden>
+      <h2>Password</h2>
+      <p>One password opens JARVIS, this setup screen and the browser desktop. Changing it logs out every other
+        browser.</p>
+      <div class="field"><label for="pw-current">Current password</label>
+        <input type="password" id="pw-current" autocomplete="current-password" required></div>
+      <div class="field"><label for="pw-new">New password</label>
+        <input type="password" id="pw-new" autocomplete="new-password" required></div>
+      <div class="row left"><button class="btn small ghost" type="submit">Change password</button>
+        <span class="dim" id="pw-status" role="status"></span></div>
+    </form>
+
+    <details class="danger"><summary>Change which Hermes JARVIS uses</summary>
+      <p>JARVIS stops using this Hermes and goes back to the welcome screen. Nothing is deleted.</p>
+      <div class="row left"><button class="btn small ghost" id="btn-disconnect">Disconnect</button>
+        <button class="btn small ghost" id="btn-use-managed" hidden>Use the Hermes JARVIS installed</button></div>
+    </details>
+  </section>
+
+  <footer class="foot"><span id="foot-version"></span> · <a href="https://hermes-agent.nousresearch.com" target="_blank" rel="noopener">About Hermes Agent</a><span id="foot-logout" hidden> · <a href="#" id="btn-logout">Log out</a></span></footer>
+</main>
+<script src="/jarvis/static/setup.js"></script>
+</body>
+</html>

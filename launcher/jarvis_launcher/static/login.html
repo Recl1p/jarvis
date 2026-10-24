@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="referrer" content="no-referrer">
+<title>JARVIS Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@300;400;500;600&display=swap">
+<link rel="stylesheet" href="/jarvis/static/setup.css">
+<link rel="icon" href="/jarvis/static/icon.svg" type="image/svg+xml">
+</head>
+<body>
+<main class="shell narrow">
+  <header class="brand">
+    <div class="core" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div>
+      <div class="kicker">J.A.R.V.I.S.</div>
+      <h1 id="title">Log in</h1>
+    </div>
+  </header>
+
+  <form id="form-create" class="card" hidden>
+    <h2>Create a password for JARVIS</h2>
+    <p>Everyone who can reach this server on your network needs it to open JARVIS, its setup and its browser desktop.
+      Keep it somewhere safe: changing it later needs the current one.</p>
+    <div class="field"><label for="new-password">New password</label>
+      <input type="password" id="new-password" autocomplete="new-password" required></div>
+    <div class="field"><label for="new-password2">Type it again</label>
+      <input type="password" id="new-password2" autocomplete="new-password" required></div>
+    <p class="error" id="create-error" role="alert"></p>
+    <div class="row"><button class="btn" type="submit">Create password</button></div>
+  </form>
+
+  <form id="form-login" class="card" hidden>
+    <div class="field"><label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password" required></div>
+    <p class="error" id="login-error" role="alert"></p>
+    <div class="row"><button class="btn" type="submit">Log in</button></div>
+  </form>
+
+  <p class="dim" id="env-note" hidden>This JARVIS's password is set by <code>JARVIS_PASSWORD</code> in its compose file.</p>
+  <footer class="foot">JARVIS · <a href="https://hermes-agent.nousresearch.com" target="_blank" rel="noopener">About Hermes Agent</a></footer>
+</main>
+<script src="/jarvis/static/login.js"></script>
+</body>
+</html>

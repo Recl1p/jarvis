@@ -1,0 +1,8 @@
+# Local configuration and secrets: never commit these.
+.env
+.env.local
+# Build/share artifacts.
+*.tar.gz
+*.sha256
+__pycache__/
+*.bak*
