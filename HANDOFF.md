@@ -2083,6 +2083,30 @@ friends paste, with the key filled in by `scripts/friend-files.sh <key file> <ou
 or a `v*` tag (`.github/workflows/image.yml`, actions pinned by SHA) publishes. INSTALL.md replaces SHARING.md; the
 tarball scripts are gone. JARVIS and the connector are 2.1.0.
 
+### 37. 2.1.1: OmniVoice as an optional install, and the NAS stack on the published image (2026-10-24)
+
+The user wanted their Dockge stack to update with Dockge's **Update** button, and OmniVoice optional for other users
+(those with GPUs); they don't use OmniVoice themselves.
+
+**OmniVoice from the setup screen (launcher/jarvis_launcher/voices.py).** The published image keeps only Pocket TTS.
+The OmniVoice card (managed mode) installs OmniVoice into `$HERMES_HOME/omnivoice`: `uv venv --python 3.12`, then the
+image's own lock (`/opt/omnivoice/requirements.txt`) with torch/torchaudio switched to `+cpu` or `+cu128` (the same
+2.8.0; the CUDA set resolves against download.pytorch.org/whl/cu128, checked with `uv pip compile`), then the model
+snapshot (k2-fsa/OmniVoice @ c5fdb5cc), a probe (`torch.cuda.is_available()`), and the `.installed` marker last.
+Free space checked first (12 / 18 GB); a reinstall or a half-done one is wiped first; Remove deletes the marker first.
+The card shows the GPUs `nvidia-smi -L` lists. API: `GET /jarvis/api/voices`, `POST /jarvis/api/voices/omnivoice
+{variant}`, `POST .../remove`, log `?which=omnivoice`. The connector (`vesper_voice.omnivoice_root`) uses the image's
+OmniVoice if a build has it, else the data volume's once the marker exists; the worker runs on `cuda:0` in float16
+when torch sees a GPU (`tts.omnivoice.device`: auto/cpu/cuda; no GPU -> CPU), and reports the device. Compose files
+carry a commented `deploy.resources.reservations.devices` NVIDIA block; INSTALL.md has the steps (TrueNAS: Apps >
+Configuration > Settings > Install NVIDIA Drivers). The GPU path is untested on real GPU hardware (none here).
+
+**The NAS stack** (`deployment/nas/compose.yaml`) now runs `ghcr.io/recl1p/jarvis:2` (no build; same mounts, Tailscale
+:6080, env), so Dockge's Update pulls and restarts it. `update.sh` = pull + recreate + health check (the connector
+check with the API key, read inside the container) + rollback to the image that ran before (`jarvis-rollback:<stamp>`,
+three kept). Watchtower stays off for it. The image no longer has OmniVoice baked in; the user's voices keep coming
+from their own clips through Pocket TTS (their cloning weights are in the data volume).
+
 ## Current status / what's still open
 
 - **Item 11 — applied 2026-09-13**: after a host reboot cleared the Podman hang,
