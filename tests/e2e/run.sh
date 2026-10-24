@@ -24,6 +24,8 @@ WORK=${E2E_WORK:-/tmp/jarvis-e2e}
 IMAGE=${JARVIS_E2E_IMAGE:-localhost/jarvis:e2e}
 HERMES_IMAGE=localhost/hermes-stock:e2e
 PW_IMAGE=mcr.microsoft.com/playwright:v1.64.1-noble
+# A ceiling per JARVIS under test: if one runs out (OmniVoice on a CPU is big), only it is stopped, not the host's apps.
+MEMORY=${E2E_MEMORY:-6g}
 
 phase=all build=1 keep=0 live="" chat=0
 while [ $# -gt 0 ]; do
@@ -105,7 +107,7 @@ wait_for ollama http://127.0.0.1:11434/health 30
 
 if [ "$phase" = all ] || [ "$phase" = fresh ]; then
     say "Phase 1: a fresh JARVIS (setup screen, install, dashboard, API, settings)"
-    $D run -d --name jarvis-fresh --network "$NET" -v "$WORK/fresh:/opt/data" --shm-size 1g \
+    $D run -d --name jarvis-fresh --network "$NET" -v "$WORK/fresh:/opt/data" --shm-size 1g --memory "$MEMORY" \
         -e TZ=UTC -e JARVIS_VOICE_KEY "$IMAGE" >/dev/null
     wait_for jarvis-fresh http://127.0.0.1:8642/jarvis/health 90
     playwright fresh --project=setup --project=install --project=dashboard || status=$?
@@ -116,7 +118,7 @@ fi
 if [ "$phase" = all ] || [ "$phase" = external ]; then
     say "Phase 2: a JARVIS connecting to someone's own Hermes"
     $D run -d --name hermes-ext --network "$NET" -v "$WORK/shared:/shared" "$HERMES_IMAGE" >/dev/null
-    $D run -d --name jarvis-ext --network "$NET" -v "$WORK/ext:/opt/data" -e JARVIS_DESKTOP=0 -e TZ=UTC "$IMAGE" >/dev/null
+    $D run -d --name jarvis-ext --network "$NET" -v "$WORK/ext:/opt/data" --memory "$MEMORY" -e JARVIS_DESKTOP=0 -e TZ=UTC "$IMAGE" >/dev/null
     wait_for jarvis-ext http://127.0.0.1:8642/jarvis/health 90
     sleep 10   # the test Hermes's gateway finishes starting
     playwright external --project=external || status=$?
