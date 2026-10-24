@@ -156,6 +156,21 @@
         <span class="dim" id="persona-status"></span></div>
     </div>
 
+    <div class="card" id="omnivoice-card" hidden>
+      <h2>OmniVoice <span class="dim">(optional)</span></h2>
+      <p>JARVIS speaks with Pocket TTS, built in. OmniVoice is a second voice engine that copies each persona's voice
+        from its clip. It's best with an NVIDIA GPU given to this container (INSTALL.md, OmniVoice); on a processor
+        alone it's several times slower than speech.</p>
+      <p id="ov-gpu"></p>
+      <p id="ov-state" class="dim"></p>
+      <div class="row left" id="ov-actions">
+        <button class="btn small" id="btn-ov-cuda" hidden>Install for the NVIDIA GPU</button>
+        <button class="btn small ghost" id="btn-ov-cpu" hidden>Install for the processor (CPU)</button>
+        <button class="btn small ghost" id="btn-ov-remove" hidden>Remove OmniVoice</button>
+      </div>
+      <pre class="log small" id="ov-log" hidden></pre>
+    </div>
+
     <form class="card" id="password-card" hidden>
       <h2>Password</h2>
       <p>One password opens JARVIS, this setup screen and the browser desktop. Changing it logs out every other

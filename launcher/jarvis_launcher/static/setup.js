@@ -38,7 +38,7 @@
       existing: 'Connect your Hermes', connected: 'JARVIS is connected'
     }[name] || 'JARVIS';
     if (name === 'existing') loadPrompt();
-    if (name === 'connected') renderConnected();
+    if (name === 'connected') { renderConnected(); loadOmniVoice(); }
   }
   document.addEventListener('click', e => {
     const go = e.target.closest('[data-go]');
@@ -289,6 +289,57 @@
     const r = await api('use-managed', {});
     if (r.ok) location.reload(); else alert(errorText(r));
   });
+
+  // --- OmniVoice (optional voice engine, launcher/jarvis_launcher/voices.py) -------------------------------------
+  let ovOffset = 0, ovTimer = null;
+  async function loadOmniVoice() {
+    const r = await api('voices');
+    if (!r.ok || !r.data.managed) { $('omnivoice-card').hidden = true; return; }
+    const ov = r.data.omnivoice;
+    $('omnivoice-card').hidden = false;
+    const gpu = ov.gpus.length > 0;
+    $('ov-gpu').textContent = gpu ? `This container can use: ${ov.gpus.join(', ')}.` : 'No NVIDIA GPU is visible to this container.';
+    const inst = ov.installed;
+    let text;
+    if (ov.in_image) text = 'This JARVIS image has OmniVoice built in.';
+    else if (ov.busy) text = ov.step || 'Working…';
+    else if (inst) text = `Installed (${ov.variants[inst.variant]?.label || inst.variant} build${inst.gpu ? `, on ${inst.gpu}` : ''}). Choose it under VOICE in the dashboard's Vitals panel.`;
+    else if (ov.status === 'failed') text = `The last attempt failed: ${ov.error}`;
+    else text = `Not installed. The CPU build is about ${ov.variants.cpu.size_gb} GB, the GPU build about ${ov.variants.cuda.size_gb} GB; ${ov.free_gb} GB free.`;
+    $('ov-state').textContent = text;
+    const idle = !ov.busy && !ov.in_image;
+    $('btn-ov-cuda').hidden = !idle || !!inst;
+    $('btn-ov-cpu').hidden = !idle || !!inst;
+    $('btn-ov-remove').hidden = !idle || !inst;
+    // The build that fits this server first.
+    $('btn-ov-cuda').className = gpu ? 'btn small' : 'btn small ghost';
+    $('btn-ov-cpu').className = gpu ? 'btn small ghost' : 'btn small';
+    if (ov.busy) followOmniVoice();
+  }
+  function followOmniVoice() {
+    if (ovTimer) return;
+    $('ov-log').hidden = false;
+    ovTimer = setInterval(async () => {
+      const r = await api('log?which=omnivoice&offset=' + ovOffset);
+      if (r.ok) { appendLog('ov-log', r.data.lines || []); ovOffset = r.data.offset; }
+      const s = await api('voices');
+      if (s.ok && !s.data.omnivoice.busy) { clearInterval(ovTimer); ovTimer = null; loadOmniVoice(); }
+    }, 2000);
+  }
+  async function omniVoice(path, body, confirmText) {
+    if (confirmText && !confirm(confirmText)) return;
+    const r = await api(path, body);
+    if (!r.ok) { $('ov-state').textContent = errorText(r); return; }
+    $('ov-log').textContent = '';
+    followOmniVoice();
+    loadOmniVoice();
+  }
+  $('btn-ov-cuda').addEventListener('click', () => omniVoice('voices/omnivoice', { variant: 'cuda' },
+    'Download and install OmniVoice for the NVIDIA GPU? About 14 GB; it takes a while.'));
+  $('btn-ov-cpu').addEventListener('click', () => omniVoice('voices/omnivoice', { variant: 'cpu' },
+    'Download and install OmniVoice for the processor? About 9 GB; it takes a while, and speaking is slow without a GPU.'));
+  $('btn-ov-remove').addEventListener('click', () => omniVoice('voices/omnivoice/remove', {},
+    'Remove OmniVoice and free its space? JARVIS keeps speaking with Pocket TTS.'));
 
   // --- login -----------------------------------------------------------------------------------------------------
   (async () => {

@@ -27,7 +27,7 @@ export default defineConfig({
   projects: [
     { name: 'setup', testMatch: /(05-login|10-setup)\.spec\.ts/, use: { baseURL: FRESH } },
     { name: 'install', testMatch: /20-install\.spec\.ts/, dependencies: ['setup'], use: { baseURL: FRESH } },
-    { name: 'dashboard', testMatch: /(30-dashboard|40-api|50-settings)\.spec\.ts/, dependencies: ['install'], use: { baseURL: FRESH } },
+    { name: 'dashboard', testMatch: /(30-dashboard|40-api|50-settings|55-omnivoice)\.spec\.ts/, dependencies: ['install'], use: { baseURL: FRESH } },
     { name: 'external', testMatch: /60-external\.spec\.ts/, use: { baseURL: EXT } },
     ...(LIVE ? [{ name: 'smoke', testMatch: /90-smoke\.spec\.ts/, use: { baseURL: LIVE } }] : []),
   ],

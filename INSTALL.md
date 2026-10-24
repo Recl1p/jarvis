@@ -16,7 +16,7 @@ Hermes) and 4 GB of memory free for JARVIS.
 - [First visit: the password](#first-visit-the-password)
 - [Install Hermes, or connect yours](#install-hermes-or-connect-yours)
 - [Connect a model](#connect-a-model)
-- [Voices](#voices)
+- [Voices](#voices) (and [OmniVoice](#omnivoice-optional-best-with-an-nvidia-gpu), optional)
 - [Phones, the microphone and HTTPS](#phones-the-microphone-and-https)
 - [Security](#security)
 - [Updates](#updates)
@@ -128,6 +128,22 @@ original voices. Keep the key to yourself: the YAML you were given is the only p
 The **VOICE** control in the dashboard's Vitals panel switches engines. ElevenLabs (an online service with your own
 account) is in the GUIDE's Voice step. Pocket TTS needs a reasonably recent processor to keep up; on a slow one the
 first words of each reply take a moment longer.
+
+### OmniVoice (optional, best with an NVIDIA GPU)
+
+OmniVoice is a second voice engine that copies each persona's voice straight from its clip. It isn't in the image
+because it is big (about 9 GB, or 14 GB for the GPU build) and, on a processor alone, several times slower than speech.
+With an NVIDIA GPU it is quick. To add it:
+
+1. **Give JARVIS the GPU (skip this for the CPU build).** The server needs NVIDIA's driver and container toolkit. On
+   TrueNAS: **Apps**, **Configuration**, **Settings**, tick **Install NVIDIA Drivers**. Then, in JARVIS's YAML, remove
+   the `#` in front of the `deploy:` block (seven lines) and save, so the app restarts with the GPU.
+2. Open the setup screen (`/jarvis/`). Its **OmniVoice** card says whether JARVIS sees a GPU. Press **Install for the
+   NVIDIA GPU** (or **Install for the processor**) and wait: the log shows each step, and it takes a while.
+3. In the dashboard's Vitals panel, choose **OmniVoice** under **VOICE**.
+
+OmniVoice lives in the data folder (`/opt/data/omnivoice`), so it survives JARVIS updates. **Remove OmniVoice** on the
+same card frees the space again. If the GPU build doesn't see a GPU when it starts, it uses the processor.
 
 ## Phones, the microphone and HTTPS
 

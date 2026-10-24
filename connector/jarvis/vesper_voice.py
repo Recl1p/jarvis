@@ -48,7 +48,12 @@ from aiohttp import web
 logger = logging.getLogger(__name__)
 
 OMNIVOICE_ROOT = Path("/opt/omnivoice")
-OMNIVOICE_PYTHON = OMNIVOICE_ROOT / "venv" / "bin" / "python"   # also runs Pocket TTS
+OMNIVOICE_PYTHON = OMNIVOICE_ROOT / "venv" / "bin" / "python"   # the image's voice interpreter: runs Pocket TTS
+# OmniVoice installed from the setup screen (launcher/jarvis_launcher/voices.py): $HERMES_HOME/omnivoice, complete once
+# its marker file is written.
+OMNIVOICE_DATA_DIR = "omnivoice"
+OMNIVOICE_MARKER = ".installed"
+OMNIVOICE_DEVICES = ("auto", "cpu", "cuda")
 WORKER = Path(__file__).resolve().parent / "omnivoice_worker.py"
 POCKET_WORKER = Path(__file__).resolve().parent / "pocket_worker.py"
 POCKET_HF = Path("/opt/pocket-tts/hf")
@@ -78,6 +83,7 @@ DEFAULT_ORDER = ("elevenlabs", "pocket", "omnivoice", "edge", "piper")
 # (RTF ~5, 4% WER) is about twice as quick as 8 steps (RTF ~12, 0%) for nearly the same clarity; int8 was faster
 # still but garbled words, so it stays off. config.yaml tts.omnivoice.steps: 8 trades speed for quality.
 DEFAULTS = {"steps": 4, "guidance": 0.0, "int8": False, "threads": 3, "idle_minutes": 15, "enabled": True}
+# tts.omnivoice.device: auto (an NVIDIA GPU when the container has one, else the CPU), cpu or cuda.
 # Pocket TTS catalog voices (CC0 / CC-BY, kyutai/tts-voices), picked on the NAS (HANDOFF 32) for each persona's
 # register: a British narrator for JARVIS, the lowest male voice for Ultron, an American woman for Cortana.
 POCKET_DEFAULTS = {"threads": 3, "idle_minutes": 30, "enabled": True,
@@ -127,8 +133,11 @@ def _merge(defaults: dict, raw) -> dict:
 
 
 def settings() -> dict:
-    out = _merge(DEFAULTS, _tts_config().get("omnivoice"))
+    raw = _tts_config().get("omnivoice")
+    out = _merge(DEFAULTS, raw)
     out["steps"] = max(2, min(64, out["steps"]))
+    device = raw.get("device") if isinstance(raw, dict) else None
+    out["device"] = device if device in OMNIVOICE_DEVICES else "auto"
     return out
 
 
@@ -141,15 +150,36 @@ def pocket_settings() -> dict:
     return out
 
 
-def model_dir():
-    """The baked-in OmniVoice snapshot (a local folder, so the worker never needs the network or a hub 'main' ref)."""
-    snaps = sorted((OMNIVOICE_ROOT / "hf" / "hub" / "models--k2-fsa--OmniVoice" / "snapshots").glob("*/config.json"))
+def _snapshot(root: Path):
+    snaps = sorted((root / "hf" / "hub" / "models--k2-fsa--OmniVoice" / "snapshots").glob("*/config.json"))
     return snaps[0].parent if snaps else None
 
 
+def omnivoice_root():
+    """Where OmniVoice is: built into the image (a build with JARVIS_LOCAL_VOICES=1), else installed into the data
+    volume from the setup screen (a CPU or an NVIDIA GPU build), else None."""
+    if _snapshot(OMNIVOICE_ROOT) is not None:
+        return OMNIVOICE_ROOT
+    from hermes_constants import get_hermes_home
+    root = Path(get_hermes_home()) / OMNIVOICE_DATA_DIR
+    return root if (root / OMNIVOICE_MARKER).is_file() else None
+
+
+def omnivoice_python():
+    root = omnivoice_root()
+    return root / "venv" / "bin" / "python" if root is not None else None
+
+
+def model_dir():
+    """OmniVoice's model snapshot (a local folder, so the worker never needs the network or a hub 'main' ref)."""
+    root = omnivoice_root()
+    return _snapshot(root) if root is not None else None
+
+
 def installed() -> bool:
-    """OmniVoice is in the image."""
-    return OMNIVOICE_PYTHON.is_file() and model_dir() is not None
+    """OmniVoice is in the image or was installed from the setup screen."""
+    python = omnivoice_python()
+    return python is not None and python.is_file() and model_dir() is not None
 
 
 def pocket_installed() -> bool:
@@ -449,11 +479,12 @@ class OmniVoiceEngine(WorkerEngine):
 
     def command(self):
         cfg = self.cfg or settings()
-        return [str(OMNIVOICE_PYTHON), "-I", str(WORKER),
-                json.dumps({"model": str(model_dir()), **{k: cfg[k] for k in ("steps", "guidance", "int8", "threads")}})]
+        return [str(omnivoice_python()), "-I", str(WORKER),
+                json.dumps({"model": str(model_dir()),
+                            **{k: cfg[k] for k in ("steps", "guidance", "int8", "threads", "device")}})]
 
     def env(self):
-        return {"HF_HOME": str(OMNIVOICE_ROOT / "hf")}
+        return {"HF_HOME": str((omnivoice_root() or OMNIVOICE_ROOT) / "hf")}
 
     async def synthesize(self, text: str, persona: str, still_wanted=lambda: True, background=False):
         """WAV bytes for *text* in *persona*'s cloned voice, from the cache when possible. None if no longer wanted."""
@@ -464,7 +495,8 @@ class OmniVoiceEngine(WorkerEngine):
         return await self._render(cached, req, still_wanted, background)
 
     def status(self):
-        return {**super().status(), "settings": {k: (self.cfg or settings())[k] for k in ("steps", "guidance", "int8")}}
+        return {**super().status(), "device": self.hello.get("device"),
+                "settings": {k: (self.cfg or settings())[k] for k in ("steps", "guidance", "int8", "device")}}
 
 
 class PocketEngine(WorkerEngine):

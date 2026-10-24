@@ -1,45 +1,40 @@
-# JARVIS on TrueNAS -- the live stack (managed in Dockge as "jarvis"). JARVIS 2: Hermes is not in the image.
+# JARVIS on TrueNAS -- the live stack (managed in Dockge as "jarvis"). Hermes is not in the image.
 #
-#   Source:   ./src  (this repo; ./src/Dockerfile builds localhost/jarvis:local)
+#   Image:    ghcr.io/recl1p/jarvis:2, the published image (the same one friends install). Dockge's Update button
+#             pulls the newest 2.x release and restarts JARVIS; `sudo sh update.sh` does the same with a health check and
+#             an automatic rollback. The source is github.com/Recl1p/jarvis (private).
 #   Data:     /mnt/SSDCACHE256/jarvis/data -> /opt/data: Hermes (installed there by JARVIS from Nous Research's official
 #             installer, after consent on the setup screen) and its home: config, logins, memory, skills, chats, cron
-#             jobs, notes, music, the browser profile; JARVIS's own state in data/jarvis. Snapshot the
-#             SSDCACHE256/jarvis dataset for backups.
+#             jobs, notes, music, the browser profile, the voice clips; JARVIS's own state and login in data/jarvis;
+#             OmniVoice in data/omnivoice if installed from the setup screen. Snapshot the SSDCACHE256/jarvis dataset
+#             for backups.
 #   Files:    /mnt/SSDCACHE256/jarvis/files/{Documents,Downloads}, at the paths JARVIS used on the old PC.
-#   Access:   home LAN, plain http. JARVIS 2.1 asks for a password (created on the first visit after updating):
+#   Access:   home LAN, plain http, behind JARVIS's password (created on the first visit):
 #               http://truenas.local:8642          setup screen + connection test: /jarvis/   dashboard: /vesper
 #               browser desktop: /desktop/ (behind the same login)
 #             Anywhere, via the NAS Tailscale app (HTTPS, needed for the mic on phones):
 #               https://truenas-scale.anchovy-chameleon.ts.net/vesper   (and /desktop/)
 #               https://truenas-scale.anchovy-chameleon.ts.net:6080/vnc.html  (the old desktop address: NO login;
 #               drop the 6080 port below and JARVIS_DESKTOP_LISTEN to close it once /desktop/ is in use)
-#   Update:   JARVIS itself: change ./src, then `sudo sh update.sh` (rebuild, health check, automatic rollback).
-#             Hermes: automatic, daily at 04:00, from the setup screen's Updates card (with its own rollback).
-#             Dockge's "Update" button only pulls images and won't rebuild this local one.
+#   Hermes:   updates itself daily at 04:00 (the setup screen's Updates card, with its own rollback).
 #   CLI:      sudo docker exec -it --user hermes jarvis hermes model   (keep --user hermes)
-# Defaults are the live NAS; a .env next to this file can override them (cutover rehearsals do).
+# Defaults are the live NAS; a .env next to this file can override them (rehearsals do).
 name: ${JARVIS_STACK_NAME:-jarvis}
 x-dockge:
   urls:
     - http://truenas.local:8642/vesper
     - http://truenas.local:8642/jarvis/
     - https://truenas-scale.anchovy-chameleon.ts.net/vesper
-    - https://truenas-scale.anchovy-chameleon.ts.net:6080/vnc.html?autoconnect=true&resize=remote
+    - https://truenas-scale.anchovy-chameleon.ts.net/desktop/
 services:
   jarvis:
-    image: ${JARVIS_IMAGE:-localhost/jarvis:local}
-    pull_policy: never # local build only -- nothing to pull
-    build:
-      # update.sh builds from a copy staged on tmpfs (JARVIS_BUILD_CONTEXT) so files keep the repo's own modes.
-      context: ${JARVIS_BUILD_CONTEXT:-./src}
-      args:
-        JARVIS_LOCAL_VOICES: "1"
+    image: ${JARVIS_IMAGE:-ghcr.io/recl1p/jarvis:2}
     container_name: ${JARVIS_CONTAINER:-jarvis}
     ports:
-      # Setup screen + dashboard: all interfaces (LAN + Tailscale).
+      # Setup screen, dashboard and /desktop/: all interfaces (LAN + Tailscale).
       - ${JARVIS_PORT:-8642}:8642
-      # Browser desktop: LAN IP only. The Tailscale app's HTTPS publish already holds :6080 on the Tailscale IP and
-      # proxies to http://10.0.0.103:6080. 10.0.0.103 MUST stay this NAS's address (DHCP reservation).
+      # The old browser desktop address: LAN IP only. The Tailscale app's HTTPS publish holds :6080 on the Tailscale IP
+      # and proxies to http://10.0.0.103:6080. 10.0.0.103 MUST stay this NAS's address (DHCP reservation).
       - ${JARVIS_DESKTOP_BIND:-10.0.0.103}:${JARVIS_DESKTOP_PORT:-6080}:6080
     environment:
       TZ: America/New_York
@@ -53,7 +48,7 @@ services:
       - ${JARVIS_DATA_ROOT:-/mnt/SSDCACHE256/jarvis}/files/Documents:/home/akhdaier/Documents
       - ${JARVIS_DATA_ROOT:-/mnt/SSDCACHE256/jarvis}/files/Downloads:/home/akhdaier/Downloads
     labels:
-      # Watchtower updates every container nightly; this image is built locally, never pulled. JARVIS updates Hermes.
+      # Watchtower updates every container nightly; JARVIS updates only when Update is pressed in Dockge (or update.sh).
       com.centurylinklabs.watchtower.enable: "false"
     shm_size: 1gb
     stop_grace_period: 90s

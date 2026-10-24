@@ -1,5 +1,5 @@
 name: jarvis
-version: "2.1.0"
+version: "2.1.1"
 description: >-
   JARVIS connector: serves the JARVIS dashboard (/vesper) and its setup guide from this Hermes's API server,
   adds the Notes skill and PDF-to-Markdown attachments. Needs the api_server platform enabled and

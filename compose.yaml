@@ -31,6 +31,15 @@ services:
       JARVIS_PUBLIC_URL: ${JARVIS_PUBLIC_URL:-}
       JARVIS_AUTO_UPDATE: ${JARVIS_AUTO_UPDATE:-1}
       JARVIS_AUTO_UPDATE_HOUR: ${JARVIS_AUTO_UPDATE_HOUR:-4}
+    # Optional, for OmniVoice on an NVIDIA GPU (INSTALL.md, OmniVoice): the host needs NVIDIA's driver and container
+    # toolkit. Uncomment, then install OmniVoice's GPU build from the setup screen.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     shm_size: 1gb
     stop_grace_period: 90s
     restart: unless-stopped

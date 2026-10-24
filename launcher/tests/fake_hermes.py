@@ -7,7 +7,7 @@ from aiohttp import web
 KEY = "k" * 64
 
 
-def make_app(*, platform="hermes-agent", version="0.22.5", connector="2.1.0", isolation="in_process",
+def make_app(*, platform="hermes-agent", version="0.22.5", connector="2.1.1", isolation="in_process",
              model="mock-model", key=KEY):
     def authed(request):
         return request.headers.get("Authorization") == f"Bearer {key}"

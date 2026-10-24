@@ -26,6 +26,11 @@ LISTEN_PORT = int(os.environ.get("JARVIS_PORT", "8642"))
 # Where a managed Hermes's API server listens: loopback only, the launcher is the way in.
 MANAGED_HERMES_PORT = int(os.environ.get("JARVIS_HERMES_PORT", "8643"))
 MANAGED_HERMES_URL = f"http://127.0.0.1:{MANAGED_HERMES_PORT}"
+# OmniVoice, installed on request from the setup screen (voices.py) into the data volume, with the image's own pins.
+OMNIVOICE_DIR = _path("JARVIS_OMNIVOICE_DIR", str(HERMES_HOME / "omnivoice"))
+OMNIVOICE_IMAGE_DIR = _path("JARVIS_OMNIVOICE_IMAGE_DIR", "/opt/omnivoice")
+OMNIVOICE_REQUIREMENTS = _path("JARVIS_OMNIVOICE_REQUIREMENTS", "/opt/omnivoice/requirements.txt")
+UV = os.environ.get("JARVIS_UV", "/usr/local/bin/uv")
 # The browser desktop's noVNC server (desktop/start.sh), which the launcher serves at /desktop/ behind the login.
 DESKTOP_URL = os.environ.get("JARVIS_DESKTOP_URL", "http://127.0.0.1:6080")
 

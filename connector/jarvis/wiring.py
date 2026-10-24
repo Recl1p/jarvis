@@ -233,7 +233,7 @@ def _features() -> dict:
     """Optional parts that only exist where JARVIS's own image runs Hermes (the dashboard hides what's missing)."""
     from . import vesper_voice
     return {
-        "local_voices": vesper_voice.OMNIVOICE_ROOT.is_dir(),
+        "local_voices": vesper_voice.pocket_installed() or vesper_voice.installed(),
         "browser_desktop": shutil.which("chromium") is not None,
     }
 

@@ -9,6 +9,7 @@
 #   DOCKER="sudo -n docker" tests/e2e/run.sh               where docker needs sudo
 #   JARVIS_VOICE_KEY=... tests/e2e/run.sh   also unlock the voice pack in the fresh JARVIS and check its voices
 #   E2E_PASSWORD=...     the instance's password for --live (fresh instances get a test password)
+#   E2E_OMNIVOICE=1      also install OmniVoice (CPU build, about 9 GB) from the setup screen, speak with it, remove it
 #
 # Everything runs on its own Docker network (jarvis-e2e): a model server that answers deterministically (mock_llm.py,
 # named "ollama" so the guide's Local search finds it), a fresh JARVIS, a stock Hermes (hermes-stock/) and a second
@@ -71,7 +72,7 @@ playwright() {   # phase project-args...
         -v "$E2E/playwright:/work" -v "$WORK/shared:/shared" -w /work \
         -e JARVIS_FRESH=http://jarvis-fresh:8642 -e JARVIS_EXT=http://jarvis-ext:8642 -e MOCK_LLM=http://ollama:11434 \
         -e SHARED_DIR=/shared -e JARVIS_LIVE="$live" -e LIVE_ALLOW_CHAT="$chat" -e CI=1 -e PHASE="$phase_name" \
-        -e E2E_PASSWORD -e E2E_VOICE_PACK="$([ -n "${JARVIS_VOICE_KEY:-}" ] && echo 1)" \
+        -e E2E_PASSWORD -e E2E_OMNIVOICE -e E2E_VOICE_PACK="$([ -n "${JARVIS_VOICE_KEY:-}" ] && echo 1)" \
         "$PW_IMAGE" bash -c "npm install --no-audit --no-fund --loglevel=error >/dev/null && npx playwright test $*"
 }
 

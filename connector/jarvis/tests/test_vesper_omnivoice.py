@@ -54,7 +54,7 @@ def omnivoice(tmp_path, monkeypatch):
     model.mkdir()
     log = tmp_path / "worker.log"
     monkeypatch.setenv("FAKE_OMNIVOICE_LOG", str(log))
-    monkeypatch.setattr(voice, "OMNIVOICE_PYTHON", type(voice.OMNIVOICE_PYTHON)(sys.executable))
+    monkeypatch.setattr(voice, "omnivoice_python", lambda: type(voice.OMNIVOICE_PYTHON)(sys.executable))
     monkeypatch.setattr(voice, "WORKER", worker)
     monkeypatch.setattr(voice, "model_dir", lambda: model)
     monkeypatch.setattr(voice, "ENGINE", None)

@@ -18,6 +18,15 @@ services:
       JARVIS_VOICE_KEY: "@JARVIS_VOICE_KEY@"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Optional, for OmniVoice on an NVIDIA GPU (INSTALL.md, OmniVoice): the host needs NVIDIA's driver and container
+    # toolkit. Uncomment, then install OmniVoice's GPU build from the setup screen.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     shm_size: 1gb
     stop_grace_period: 90s
     restart: unless-stopped

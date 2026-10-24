@@ -46,6 +46,28 @@ test.describe.serial('settings after install', () => {
     await expect(page.locator('#persona-status')).toHaveText(/Done/);
   });
 
+  test('the OmniVoice card offers both builds and says whether there is a GPU', async ({ page, problems }) => {
+    await page.goto('/jarvis/');
+    const card = page.locator('#omnivoice-card');
+    await expect(card).toBeVisible();
+    await expect(card.getByRole('heading', { name: /OmniVoice/ })).toBeVisible();
+    await expect(page.locator('#ov-gpu')).toHaveText(/No NVIDIA GPU is visible|This container can use/);
+    await expect(page.locator('#ov-state')).toContainText(/Not installed|Installed|built in/);
+    if ((await page.locator('#ov-state').textContent())!.startsWith('Not installed')) {
+      await expect(page.getByRole('button', { name: 'Install for the NVIDIA GPU' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Install for the processor (CPU)' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Remove OmniVoice' })).toBeHidden();
+    }
+  });
+
+  test('OmniVoice install and removal need the key', async ({ request }) => {
+    expect((await request.post('/jarvis/api/voices/omnivoice', { headers: setupHeaders(), data: { variant: 'cpu' } })).status()).toBe(401);
+    expect((await request.post('/jarvis/api/voices/omnivoice/remove', { headers: setupHeaders(), data: {} })).status()).toBe(401);
+    const voices = await (await request.get('/jarvis/api/voices')).json();
+    expect(voices.managed).toBe(true);
+    expect(Object.keys(voices.omnivoice.variants).sort()).toEqual(['cpu', 'cuda']);
+  });
+
   test('changes now need the key', async ({ request }) => {
     for (const path of ['/jarvis/api/disconnect', '/jarvis/api/update/run', '/jarvis/api/persona', '/jarvis/api/install']) {
       const resp = await request.post(path, { headers: setupHeaders(), data: { accept: true } });

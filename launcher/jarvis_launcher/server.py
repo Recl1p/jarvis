@@ -28,8 +28,9 @@ from urllib.parse import quote
 import aiohttp
 from aiohttp import web
 
-from . import JARVIS_VERSION, auth, checks, config, connect, detect, hermes_setup, state
+from . import JARVIS_VERSION, auth, checks, config, connect, detect, hermes_setup, state, voices
 from .managed import Gateway, InstallJob
+from .voices import OmniVoiceJob
 from .proxy import Proxy
 from .updates import Updater, hermes_version
 
@@ -48,6 +49,7 @@ class Launcher:
         self.gateway = Gateway()
         self.installer = InstallJob(self.gateway)
         self.updater = Updater(self.gateway, self.installer)
+        self.omnivoice = OmniVoiceJob()
         self.proxy = Proxy()
         self.pair = {"status": "idle", "detail": ""}    # idle | waiting | connected | failed
         self._health = (0.0, None)                       # (checked at, healthy?)
@@ -420,7 +422,8 @@ def build_app() -> web.Application:
             offset = int(request.query.get("offset", "0"))
         except ValueError:
             offset = 0
-        source = launcher.updater.log if request.query.get("which") == "updates" else launcher.installer.log
+        which = request.query.get("which")
+        source = {"updates": launcher.updater.log, "omnivoice": launcher.omnivoice.log}.get(which, launcher.installer.log)
         lines, next_offset = source.since(offset)
         return web.json_response({"lines": lines, "offset": next_offset, "status": launcher.installer.status,
                                   "step": launcher.installer.step, "error": launcher.installer.error})
@@ -564,6 +567,34 @@ def build_app() -> web.Application:
         await launcher.gateway.start()
         return web.json_response({"mode": "managed"})
 
+    # --- OmniVoice, the optional voice engine (voices.py). Only for a Hermes JARVIS installed: the voices run in
+    # Hermes, and only that one is in this container.
+    async def voices_status(request):
+        managed = state.load().get("mode") == "managed"
+        return web.json_response({"managed": managed,
+                                  "omnivoice": await asyncio.to_thread(launcher.omnivoice.snapshot)})
+
+    async def omnivoice_install(request):
+        if (blocked := _guard(request, launcher)) is not None:
+            return blocked
+        if state.load().get("mode") != "managed":
+            return _error(409, "not_managed", "OmniVoice installs into a Hermes JARVIS installed itself.")
+        variant = str((await _body(request)).get("variant") or "")
+        if variant not in voices.VARIANTS:
+            return _error(400, "invalid_variant", "variant must be cpu or cuda.")
+        if not launcher.omnivoice.start_install(variant):
+            return _error(409, "busy", "OmniVoice is already being installed or removed.")
+        return web.json_response({"started": True}, status=202)
+
+    async def omnivoice_remove(request):
+        if (blocked := _guard(request, launcher)) is not None:
+            return blocked
+        if voices.in_image():
+            return _error(409, "in_image", "This image has OmniVoice built in; it can't be removed here.")
+        if not launcher.omnivoice.start_remove():
+            return _error(409, "busy", "OmniVoice is already being installed or removed.")
+        return web.json_response({"started": True}, status=202)
+
     async def everything_else(request):
         target = launcher.target()
         if target:
@@ -598,6 +629,9 @@ def build_app() -> web.Application:
     r.add_post("/jarvis/api/persona", apply_persona)
     r.add_post("/jarvis/api/disconnect", disconnect)
     r.add_post("/jarvis/api/use-managed", use_managed)
+    r.add_get("/jarvis/api/voices", voices_status)
+    r.add_post("/jarvis/api/voices/omnivoice", omnivoice_install)
+    r.add_post("/jarvis/api/voices/omnivoice/remove", omnivoice_remove)
     r.add_get("/jarvis/connect.sh", connect_script)
     r.add_get("/jarvis/connector.tar.gz", connector_download)
     r.add_get("/jarvis/persona/SOUL.md", persona_file)

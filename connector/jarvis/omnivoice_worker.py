@@ -7,7 +7,9 @@ once and then answers one request per line on stdin with one JSON line on stdout
         "steps": 16, "guidance": 2.0}      (steps / guidance optional: override the defaults for this request)
     <- {"id": 1, "ok": true, "seconds": 3.4, "took": 9.8}      or      {"id": 1, "ok": false, "error": "..."}
 
-Settings come as argv JSON: {"steps": 8, "guidance": 0.0, "int8": false, "threads": 3}. Every request clones the voice
+Settings come as argv JSON: {"steps": 8, "guidance": 0.0, "int8": false, "threads": 3, "device": "auto"}. "auto" runs
+on an NVIDIA GPU when torch sees one (the setup screen's GPU build of OmniVoice), else on the CPU; the ready line says
+which. Every request clones the voice
 in its reference clip (a clone prompt per clip is built once and kept), so a persona always sounds the same.
 Library chatter goes to stderr; stdout carries only the protocol.
 """
@@ -36,6 +38,11 @@ def tidy(audio, rate=24000):
     return audio * (0.9 / peak)
 
 
+def pick_device(wanted: str, cuda_available: bool) -> str:
+    """cuda when asked for (or auto) and torch sees a GPU; the CPU otherwise, so a missing GPU never stops the voice."""
+    return "cuda" if wanted in ("auto", "cuda") and cuda_available else "cpu"
+
+
 def main():
     settings = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
     proto = os.fdopen(os.dup(1), "w", buffering=1)
@@ -51,15 +58,18 @@ def main():
 
     torch.set_num_threads(int(settings.get("threads", 3)))
     started = time.time()
-    model = OmniVoice.from_pretrained(settings.get("model", "k2-fsa/OmniVoice"), device_map="cpu", dtype=torch.float32)
-    if settings.get("int8", False):
+    device = pick_device(settings.get("device", "auto"), torch.cuda.is_available())
+    model = OmniVoice.from_pretrained(settings.get("model", "k2-fsa/OmniVoice"),
+                                      device_map="cuda:0" if device == "cuda" else "cpu",
+                                      dtype=torch.float16 if device == "cuda" else torch.float32)
+    if settings.get("int8", False) and device == "cpu":
         # Dynamic int8 for the language model's Linear layers: faster on a CPU, but it garbles words (HANDOFF 31).
         model.llm = torch.ao.quantization.quantize_dynamic(model.llm, {torch.nn.Linear}, dtype=torch.qint8)
     # OmniVoice's own post-processing trims short lines ("On it.", "Good evening.") down to nothing with these voices,
     # so it's off and tidy() below does a gentler version.
     config = OmniVoiceGenerationConfig(num_step=int(settings.get("steps", 8)), guidance_scale=float(settings.get("guidance", 0.0)),
                                        postprocess_output=False)
-    proto.write(json.dumps({"ready": True, "load_seconds": round(time.time() - started, 1)}) + "\n")
+    proto.write(json.dumps({"ready": True, "load_seconds": round(time.time() - started, 1), "device": device}) + "\n")
     prompts = {}
     for line in sys.stdin:
         try:

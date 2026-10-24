@@ -259,17 +259,22 @@ class InstallJob:
         return target, hashlib.sha256(body).hexdigest()
 
     async def _stream(self, argv: list) -> int:
-        proc = await asyncio.create_subprocess_exec(
-            *argv, env=hermes_setup.hermes_env(), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT, cwd=str(config.HERMES_HOME))
-        assert proc.stdout is not None
-        pending = b""
-        while chunk := await proc.stdout.read(4096):
-            pending += chunk
-            # Progress bars redraw with \r; treat it as a line break so each tick is its own line.
-            *lines, pending = re.split(rb"\r\n|\n|\r", pending)
-            for line in lines:
-                self.log.write(line.decode("utf-8", "replace"))
-        if pending:
-            self.log.write(pending.decode("utf-8", "replace"))
-        return await proc.wait()
+        return await stream_process(argv, self.log, env=hermes_setup.hermes_env(), cwd=str(config.HERMES_HOME))
+
+
+async def stream_process(argv: list, log: LogBuffer, *, env: dict, cwd: str) -> int:
+    """Run *argv*, writing its output to *log* line by line as it comes; returns the exit code."""
+    proc = await asyncio.create_subprocess_exec(
+        *argv, env=env, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT, cwd=cwd)
+    assert proc.stdout is not None
+    pending = b""
+    while chunk := await proc.stdout.read(4096):
+        pending += chunk
+        # Progress bars redraw with \r; treat it as a line break so each tick is its own line.
+        *lines, pending = re.split(rb"\r\n|\n|\r", pending)
+        for line in lines:
+            log.write(line.decode("utf-8", "replace"))
+    if pending:
+        log.write(pending.decode("utf-8", "replace"))
+    return await proc.wait()
