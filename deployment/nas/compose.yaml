@@ -1,14 +1,26 @@
-# JARVIS on TrueNAS -- the live stack (managed in Dockge as "jarvis"). Hermes is not in the image.
+# JARVIS on TrueNAS -- the live stack (managed in Dockge as "jarvis"). Hermes is not in the image, and not in this stack.
 #
 #   Image:    ghcr.io/recl1p/jarvis:2, the published image (the same one friends install). Dockge's Update button
 #             pulls the newest 2.x release and restarts JARVIS; `sudo sh update.sh` does the same with a health check and
-#             an automatic rollback. The source is github.com/Recl1p/jarvis (private).
-#   Data:     /mnt/SSDCACHE256/jarvis/data -> /opt/data: Hermes (installed there by JARVIS from Nous Research's official
-#             installer, after consent on the setup screen) and its home: config, logins, memory, skills, chats, cron
-#             jobs, notes, music, the browser profile, the voice clips; JARVIS's own state and login in data/jarvis;
-#             OmniVoice in data/omnivoice if installed from the setup screen. Snapshot the SSDCACHE256/jarvis dataset
-#             for backups.
-#   Files:    /mnt/SSDCACHE256/jarvis/files/{Documents,Downloads}, at the paths JARVIS used on the old PC.
+#             an automatic rollback. The source is github.com/Recl1p/jarvis. The stack's .env may set JARVIS_IMAGE.
+#   Hermes:   the TrueNAS app "hermes" (catalog app hermes-agent, community train), since 2026-11-09. It uses this
+#             stack's data folder as its home, so JARVIS, Hermes's own dashboard (http://truenas.local:30433), the CLI
+#             and Telegram all share one Hermes: the same memory, chats, skills, cron jobs and settings.
+#               - JARVIS talks to it over the private Docker network jarvis-hermes (http://hermes:8643), and Hermes's
+#                 browser drives JARVIS's desktop Chromium over that network (JARVIS_CDP_PROXY, http://jarvis:9223).
+#               - The Updates card on JARVIS's setup screen upgrades, health-checks and rolls back the app through the
+#                 TrueNAS API (user jarvis-updater, role APPS_WRITE only; its key is in this stack's .env, never in
+#                 the data folder). TrueNAS's own Apps > Update does the same.
+#               - JARVIS keeps the connector in the shared folder current, and exports its voice runtime to
+#                 data/jarvis/runtime, which the app mounts at /opt/omnivoice, /opt/pocket-tts and /opt/piper-voices.
+#               - The app runs as 10001:10001 (this folder's owner) with HERMES_TIMEZONE=America/New_York (cron times)
+#                 and HERMES_GATEWAY_NO_SUPERVISE=1 (the app lacks CAP_FOWNER, which Hermes's s6 gateway slot needs).
+#             CLI:  sudo docker exec -it --user hermes ix-hermes-hermes-agent-1 hermes   (keep --user hermes)
+#   Data:     /mnt/SSDCACHE256/jarvis/data -> /opt/data: Hermes's home (config, logins, memory, skills, chats, cron jobs,
+#             notes, music, the voice clips), JARVIS's own state and login in data/jarvis, the browser desktop's profile.
+#             Snapshot the SSDCACHE256/jarvis dataset for backups (TrueNAS also snapshots it before each app upgrade).
+#   Files:    /mnt/SSDCACHE256/jarvis/files/{Documents,Downloads}, at the paths JARVIS used on the old PC (in both
+#             containers).
 #   Access:   home LAN, plain http, behind JARVIS's password (created on the first visit):
 #               http://truenas.local:8642          setup screen + connection test: /jarvis/   dashboard: /vesper
 #               browser desktop: /desktop/ (behind the same login)
@@ -16,9 +28,7 @@
 #               https://truenas-scale.anchovy-chameleon.ts.net/vesper   (and /desktop/)
 #               https://truenas-scale.anchovy-chameleon.ts.net:6080/vnc.html  (the old desktop address: NO login;
 #               drop the 6080 port below and JARVIS_DESKTOP_LISTEN to close it once /desktop/ is in use)
-#   Hermes:   updates itself daily at 04:00 (the setup screen's Updates card, with its own rollback).
-#   CLI:      sudo docker exec -it --user hermes jarvis hermes model   (keep --user hermes)
-# Defaults are the live NAS; a .env next to this file can override them (rehearsals do).
+# Defaults are the live NAS; the .env next to this file holds the TrueNAS key and can override the rest (rehearsals do).
 name: ${JARVIS_STACK_NAME:-jarvis}
 x-dockge:
   urls:
@@ -26,6 +36,7 @@ x-dockge:
     - http://truenas.local:8642/jarvis/
     - https://truenas-scale.anchovy-chameleon.ts.net/vesper
     - https://truenas-scale.anchovy-chameleon.ts.net/desktop/
+    - http://truenas.local:30433/
 services:
   jarvis:
     image: ${JARVIS_IMAGE:-ghcr.io/recl1p/jarvis:2}
@@ -41,16 +52,35 @@ services:
       JARVIS_SCAN_SUBNETS: 10.0.0.0/24
       # Keeps the published :6080 desktop (the Tailscale :6080 address) working; noVNC is loopback-only otherwise.
       JARVIS_DESKTOP_LISTEN: 0.0.0.0
+      # Hermes is the TrueNAS app "hermes", on this same data folder (see above).
+      JARVIS_SHARED_HOME: "1"
+      # DevTools for the desktop's Chromium, for Hermes's browser. Not published: only the jarvis-hermes network
+      # (JARVIS and the Hermes app) reaches it. DevTools has no login.
+      JARVIS_CDP_PROXY: 0.0.0.0:9223
+      JARVIS_TRUENAS_URL: ${JARVIS_TRUENAS_URL:-wss://10.0.0.103/api/current}
+      JARVIS_TRUENAS_APP: ${JARVIS_TRUENAS_APP:-hermes}
+      # The NAS's self-signed certificate (truenas_default, valid until 2026-12-17). When TrueNAS renews it, put the
+      # new SHA-256 here or in .env: `openssl s_client -connect 10.0.0.103:443 </dev/null | openssl x509 -outform DER
+      # | sha256sum`. Until then the Updates card says the certificate changed.
+      JARVIS_TRUENAS_CERT_SHA256: ${JARVIS_TRUENAS_CERT_SHA256:-aca77f66f1015f6017a543084db21d2c77bb47e209dfa17acb12b2e1a407936d}
+      JARVIS_TRUENAS_API_KEY: ${JARVIS_TRUENAS_API_KEY:-}
     volumes:
       - ${JARVIS_DATA_ROOT:-/mnt/SSDCACHE256/jarvis}/data:/opt/data
       - ${JARVIS_DATA_ROOT:-/mnt/SSDCACHE256/jarvis}/files/Documents:/var/home/akhdaier/Documents
       - ${JARVIS_DATA_ROOT:-/mnt/SSDCACHE256/jarvis}/files/Downloads:/var/home/akhdaier/Downloads
       - ${JARVIS_DATA_ROOT:-/mnt/SSDCACHE256/jarvis}/files/Documents:/home/akhdaier/Documents
       - ${JARVIS_DATA_ROOT:-/mnt/SSDCACHE256/jarvis}/files/Downloads:/home/akhdaier/Downloads
+    networks:
+      default: {}
+      jarvis-hermes:
+        aliases: [jarvis]
     labels:
       # Watchtower updates every container nightly; JARVIS updates only when Update is pressed in Dockge (or update.sh).
       com.centurylinklabs.watchtower.enable: "false"
     shm_size: 1gb
     stop_grace_period: 90s
     restart: unless-stopped
-networks: {}
+networks:
+  # Created once with `sudo docker network create jarvis-hermes`; the TrueNAS app "hermes" joins it (alias hermes).
+  jarvis-hermes:
+    external: true
