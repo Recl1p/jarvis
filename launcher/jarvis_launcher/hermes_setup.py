@@ -47,6 +47,28 @@ def hermes(*args: str, home: Path = config.HERMES_HOME, timeout: int = 300, bina
     return done.returncode, (done.stdout or "") + (done.stderr or "")
 
 
+def version_tuple(text: str) -> tuple:
+    """"0.23.0" -> (0, 23, 0); an unknown version sorts as (0,)."""
+    parts = []
+    for piece in str(text or "").split(".")[:3]:
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts) or (0,)
+
+
+def installed_version(home: Path = config.HERMES_HOME) -> str:
+    """The installed Hermes's version without starting its CLI (seconds): the checkout's install stamp, which Hermes's
+    own ``__version__`` reads too ("baseVersion")."""
+    import json
+    try:
+        stamp = json.loads((config.HERMES_INSTALL_DIR / "install-stamp.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return ""
+    return str(stamp.get("baseVersion") or "") if isinstance(stamp, dict) else ""
+
+
 def installed(home: Path = config.HERMES_HOME) -> bool:
     return os.access(config.HERMES_BIN, os.X_OK) and (config.HERMES_INSTALL_DIR / ".git").exists()
 
@@ -259,8 +281,11 @@ def apply(log: Log, *, managed: bool, persona: bool, home: Path = config.HERMES_
         # Loopback only: the launcher on :8642 is the way in, and it forwards to this port.
         config_set("platforms.api_server.host", "127.0.0.1", log, home)
         config_set("platforms.api_server.port", str(config.MANAGED_HERMES_PORT), log, home)
-        # Hermes's own browser tools drive the browser desktop's Chromium (the noVNC view on :6080).
-        config_set("browser.backend", "off", log, home)
+        # Hermes's own browser drives the browser desktop's Chromium (the noVNC view on :6080) over DevTools. Before
+        # 0.23 that took the built-in browser tools (browser.backend: off); 0.23 removed them and the setting (its
+        # config migration deletes it), and its browser_exec honours browser.cdp_url by itself.
+        if version_tuple(installed_version(home)) < (0, 23):
+            config_set("browser.backend", "off", log, home)
         config_set("browser.cdp_url", "http://127.0.0.1:9222", log, home)
         config_set("browser.engine", "chrome", log, home)
         config_set("browser.headed", "true", log, home)

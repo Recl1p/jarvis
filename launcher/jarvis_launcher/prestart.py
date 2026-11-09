@@ -1,17 +1,19 @@
 """Container start, before Hermes's boot reconciler starts the gateway (image/cont-init.d/20-hermes-s6).
 
-Copies this image's connector into a managed Hermes, so the gateway starts with the connector the image ships instead
-of the one from before an image update. File copies only: Hermes's CLI isn't needed, and the launcher re-applies the
+Copies this image's connector into a managed Hermes (or an external one that shares this data folder), so the gateway
+starts with the connector the image ships instead of the one from before an image update. File copies only: Hermes's CLI isn't needed, and the launcher re-applies the
 rest of the setup once it runs.
 """
 
 import sys
 
-from . import hermes_setup, state
+from . import config, hermes_setup, state
 
 
 def main() -> int:
-    if state.load().get("mode") != "managed" or not hermes_setup.installed():
+    mode = state.load().get("mode")
+    shared = mode == "external" and config.SHARED_HOME      # an external Hermes that uses this data folder
+    if not shared and (mode != "managed" or not hermes_setup.installed()):
         return 0
     try:
         hermes_setup.install_connector(lambda line: print(f"[jarvis]{line}"))

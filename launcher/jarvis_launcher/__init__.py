@@ -6,4 +6,4 @@ connector plugin serves the dashboard at ``/vesper``. When JARVIS installed Herm
 runs its gateway and keeps it and the connector up to date.
 """
 
-JARVIS_VERSION = "2.1.1"
+JARVIS_VERSION = "2.2.0"

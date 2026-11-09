@@ -11,6 +11,7 @@ with images attached.
 import hmac
 import logging
 import re
+import os
 import shutil
 from contextlib import suppress
 from pathlib import Path
@@ -234,7 +235,10 @@ def _features() -> dict:
     from . import vesper_voice
     return {
         "local_voices": vesper_voice.pocket_installed() or vesper_voice.installed(),
-        "browser_desktop": shutil.which("chromium") is not None,
+        # The desktop runs in JARVIS's container: here, or (Hermes in its own container) reached over DevTools
+        # (JARVIS_BROWSER_DESKTOP=1 in that container's environment).
+        "browser_desktop": shutil.which("chromium") is not None
+                           or os.environ.get("JARVIS_BROWSER_DESKTOP", "").strip().lower() in ("1", "true", "yes"),
     }
 
 

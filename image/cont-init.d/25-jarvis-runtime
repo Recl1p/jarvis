@@ -1,0 +1,44 @@
+#!/command/with-contenv sh
+# JARVIS_SHARED_HOME=1: Hermes runs in another container (a TrueNAS app, say) on this data folder, and the dashboard's
+# local voices run inside Hermes. This image's voice runtime (Pocket TTS and its own Python in /opt/omnivoice, the
+# Pocket and OmniVoice models, the Piper voices) is copied to $JARVIS_RUNTIME_DIR, and that container mounts each folder
+# back at the same /opt path (the interpreter in it has absolute paths). Copied only when this image's runtime differs
+# from the copy; the launcher then restarts that Hermes, which still has the old folders mounted until then.
+set -u
+[ "${JARVIS_SHARED_HOME:-0}" = 1 ] || exit 0
+if [ "$(id -u)" = 0 ]; then
+    # The data folder is the hermes user's (and the agent's): root must not follow links planted in it.
+    exec s6-setuidgid hermes sh "$0" "$@"
+fi
+home="${HERMES_HOME:-/opt/data}"
+runtime="${JARVIS_RUNTIME_DIR:-$home/jarvis/runtime}"
+log() { echo "[jarvis-runtime] $*"; }
+mkdir -p "$runtime"
+changed=0
+for src in /opt/omnivoice /opt/pocket-tts /opt/piper-voices; do
+    name=$(basename "$src")
+    dest="$runtime/$name"
+    if [ ! -d "$src" ]; then
+        # An image built without local voices: leave an empty folder so the mount still works.
+        mkdir -p "$dest"
+        continue
+    fi
+    stamp=$(cd "$src" && find . -printf '%P %s %T@ %l\n' | LC_ALL=C sort | sha256sum | cut -d' ' -f1)
+    if [ -f "$dest/.jarvis-runtime" ] && [ "$(cat "$dest/.jarvis-runtime")" = "$stamp" ]; then
+        continue
+    fi
+    log "copying $src for the Hermes container ($(du -sh "$src" | cut -f1))"
+    rm -rf "$dest.new" "$dest.old"
+    if ! cp -a "$src" "$dest.new"; then
+        log "could not copy $src" >&2
+        rm -rf "$dest.new"
+        continue
+    fi
+    printf '%s\n' "$stamp" > "$dest.new/.jarvis-runtime"
+    # The running Hermes still has the old folder mounted: keep it until the next start, then it goes.
+    [ -d "$dest" ] && mv "$dest" "$dest.old"
+    mv "$dest.new" "$dest"
+    changed=1
+done
+[ "$changed" = 1 ] && date -u +%FT%TZ > "$runtime/.changed"
+exit 0

@@ -1,0 +1,13 @@
+#!/command/with-contenv sh
+# The supervision tree for a managed Hermes's gateways, like the profile-gateways service in Hermes's own image.
+#
+# Since Hermes 0.23 `hermes gateway start` registers each gateway as an s6 slot in /run/hermes-service (before that,
+# in /run/service). Its run scripts are written by the hermes user, so they must not sit in the root scan directory
+# (/run/service), where a root s6-supervise would run them. This nested s6-svscan runs AS HERMES over its own scan
+# directory: every s6-supervise it spawns, and every gateway it supervises, runs as hermes. The directory is created
+# hermes-owned by cont-init.d/20-hermes-s6, which also lets Hermes's boot reconciler publish the gateways to bring
+# back, before s6-rc starts this service. An empty directory (no managed Hermes, or an older one) costs nothing.
+scandir=/run/hermes-service
+[ -d "$scandir" ] || exec sleep infinity
+[ "$(id -u)" = 0 ] || exec s6-svscan "$scandir"
+exec s6-setuidgid hermes s6-svscan "$scandir"

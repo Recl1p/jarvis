@@ -123,19 +123,25 @@ class Gateway:
             self._running = code == 0
             return code, out
 
-    @staticmethod
-    async def _wait_supervised(seconds: float = 15) -> bool:
-        slot = "/run/service/gateway-default"
+    # Where Hermes puts the gateway's s6 slot: /run/hermes-service since Hermes 0.23 (a scan directory of its own,
+    # supervised as hermes: image/s6-rc.d/hermes-gateways), /run/service before.
+    SLOTS = ("/run/hermes-service/gateway-default", "/run/service/gateway-default")
+
+    @classmethod
+    async def _wait_supervised(cls, seconds: float = 15) -> bool:
         svok = "/command/s6-svok" if os.path.exists("/command/s6-svok") else "s6-svok"
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            try:
-                proc = await asyncio.create_subprocess_exec(svok, slot, stdout=asyncio.subprocess.DEVNULL,
-                                                            stderr=asyncio.subprocess.DEVNULL)
-                if await proc.wait() == 0:
-                    return True
-            except OSError:
-                return False
+            for slot in cls.SLOTS:
+                if not os.path.isdir(slot):
+                    continue
+                try:
+                    proc = await asyncio.create_subprocess_exec(svok, slot, stdout=asyncio.subprocess.DEVNULL,
+                                                                stderr=asyncio.subprocess.DEVNULL)
+                    if await proc.wait() == 0:
+                        return True
+                except OSError:
+                    return False
             await asyncio.sleep(0.5)
         return False
 

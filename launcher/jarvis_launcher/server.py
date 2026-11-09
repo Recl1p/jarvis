@@ -28,15 +28,20 @@ from urllib.parse import quote
 import aiohttp
 from aiohttp import web
 
-from . import JARVIS_VERSION, auth, checks, config, connect, detect, hermes_setup, state, voices
+from . import JARVIS_VERSION, auth, checks, config, connect, detect, hermes_setup, state, truenas, voices
+from .cdp import CDPProxy
 from .managed import Gateway, InstallJob
 from .voices import OmniVoiceJob
 from .proxy import Proxy
-from .updates import Updater, hermes_version
+from .updates import Updater, hermes_version, kind as update_kind
 
 logger = logging.getLogger(__name__)
 
 PAIR_WAIT_SECONDS = 180
+# JARVIS_SHARED_HOME: this data folder is another container's Hermes home. A Hermes of JARVIS's own in it would be a
+# second gateway on the same chats, memory, Telegram bot and cron jobs.
+SHARED_HOME_REFUSAL = ("This JARVIS shares its data folder with your Hermes (JARVIS_SHARED_HOME), so it must not run a "
+                       "Hermes of its own in it: that would be two Hermes on the same chats, memory and Telegram bot.")
 # noVNC, told to open its WebSocket under /desktop/ too (it defaults to /websockify at the root).
 DESKTOP_PAGE = "/desktop/vnc.html?autoconnect=true&resize=remote&path=desktop/websockify"
 # The desktop shows every site the agent is logged into: no other site may frame it.
@@ -51,8 +56,10 @@ class Launcher:
         self.updater = Updater(self.gateway, self.installer)
         self.omnivoice = OmniVoiceJob()
         self.proxy = Proxy()
+        self.cdp = CDPProxy() if config.CDP_PROXY_LISTEN else None
         self.pair = {"status": "idle", "detail": ""}    # idle | waiting | connected | failed
         self._health = (0.0, None)                       # (checked at, healthy?)
+        self.external_version = ""                       # an external Hermes's version, from its /health
         self._version = (0.0, "")                        # (checked at, managed Hermes version)
 
     async def managed_version(self) -> str:
@@ -90,6 +97,11 @@ class Launcher:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as session:
                 async with session.get(f"{target}/health") as resp:
                     value = resp.status == 200
+                    if value:
+                        try:
+                            self.external_version = str((json.loads(await resp.read() or b"{}")).get("version") or "")
+                        except ValueError:
+                            pass
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
             value = False
         self._health = (time.monotonic(), value)
@@ -117,12 +129,31 @@ class Launcher:
             else:
                 logger.warning("Managed mode, but Hermes is not installed in %s: the setup screen offers to reinstall",
                                config.HERMES_INSTALL_DIR)
+        elif data.get("mode") == "external" and config.SHARED_HOME and data.get("hermes_url"):
+            # A Hermes in another container that uses this data folder: bring its connector to this image's version
+            # (and restart it if needed) without holding up the launcher's start.
+            app["sync"] = asyncio.create_task(self._sync_shared(data["hermes_url"]))
+        if self.cdp is not None:
+            try:
+                await self.cdp.start(config.CDP_PROXY_LISTEN)
+            except OSError:
+                logger.exception("Could not start the DevTools proxy on %s", config.CDP_PROXY_LISTEN)
         app["schedule"] = asyncio.create_task(self.updater.run_schedule())
+
+    async def _sync_shared(self, url: str) -> None:
+        try:
+            await self.updater.sync_shared(url)
+        except Exception:  # noqa: BLE001 — the dashboard still works with the connector Hermes already has
+            logger.exception("Could not bring the shared Hermes's connector up to date")
 
     async def on_cleanup(self, app) -> None:
         # The gateway is left running: it is Hermes's own s6 service, stopped with the container, and stopping it
         # here would save "stopped" as its desired state so it would not come back after a restart.
         app["schedule"].cancel()
+        if app.get("sync") is not None:
+            app["sync"].cancel()
+        if self.cdp is not None:
+            await self.cdp.close()
         await self.proxy.close()
 
 
@@ -371,14 +402,19 @@ def build_app() -> web.Application:
         installed = hermes_setup.installed()
         healthy = await launcher.healthy()
         updates = {k: data["updates"].get(k) for k in ("auto", "hour", "last_check", "last_check_result", "last_result")}
-        updates.update(busy=launcher.updater.busy, step=launcher.updater.step)
+        updates.update(busy=launcher.updater.busy, step=launcher.updater.step, kind=update_kind(data),
+                       truenas_app=config.TRUENAS_APP if truenas.configured() else "")
+        managed = data.get("mode") == "managed"
+        shared = data.get("mode") == "external" and config.SHARED_HOME
         return web.json_response({
             "jarvis_version": JARVIS_VERSION,
             "mode": data.get("mode"),
             "configured": bool(data.get("mode")),
             "hermes": {
                 "url": launcher.target() or "", "installed": installed,
-                "version": (await launcher.managed_version()) if installed and data.get("mode") == "managed" else "",
+                "version": ((await launcher.managed_version()) if installed and managed
+                            else launcher.external_version if data.get("mode") == "external" else ""),
+                "shared_home": shared,
                 "running": launcher.gateway.running, "healthy": healthy,
                 "restarts": launcher.gateway.restarts,
             },
@@ -391,7 +427,7 @@ def build_app() -> web.Application:
                              "install_dir": str(config.HERMES_INSTALL_DIR), "hermes_home": str(config.HERMES_HOME),
                              "accepted": data.get("consent")},
             "connector": {"bundled": hermes_setup.bundled_connector_version(),
-                          "installed": hermes_setup.installed_connector_version() if data.get("mode") == "managed" else ""},
+                          "installed": hermes_setup.installed_connector_version() if managed or shared else ""},
             "persona": data.get("persona", True),
             "pair": launcher.pair,
             "updates": updates,
@@ -407,6 +443,8 @@ def build_app() -> web.Application:
             return _error(409, "busy", "An install is already running.")
         if state.load().get("mode") == "external":
             return _error(409, "external", "JARVIS is connected to your own Hermes. Disconnect it first.")
+        if config.SHARED_HOME:
+            return _error(409, "shared_home", SHARED_HOME_REFUSAL)
         persona = bool(body.get("persona", True))
         data = state.load()
         data["updates"]["auto"] = bool(body.get("auto_update", data["updates"].get("auto", True)))
@@ -509,15 +547,17 @@ def build_app() -> web.Application:
     async def update_check(request):
         if (blocked := _guard(request, launcher)) is not None:
             return blocked
-        if state.load().get("mode") != "managed":
-            return _error(409, "not_managed", "JARVIS only updates a Hermes it installed. Update yours with `hermes update`.")
+        if update_kind() is None:
+            return _error(409, "not_managed", "JARVIS only updates a Hermes it installed, or one that runs as a TrueNAS "
+                                              "app it can manage. Update yours with `hermes update`.")
         return web.json_response(await launcher.updater.check())
 
     async def update_run(request):
         if (blocked := _guard(request, launcher)) is not None:
             return blocked
-        if state.load().get("mode") != "managed":
-            return _error(409, "not_managed", "JARVIS only updates a Hermes it installed. Update yours with `hermes update`.")
+        if update_kind() is None:
+            return _error(409, "not_managed", "JARVIS only updates a Hermes it installed, or one that runs as a TrueNAS "
+                                              "app it can manage. Update yours with `hermes update`.")
         if not launcher.updater.start_update("requested"):
             return _error(409, "busy", "An update or install is already running.")
         return web.json_response({"started": True}, status=202)
@@ -560,6 +600,8 @@ def build_app() -> web.Application:
         """Back to the Hermes JARVIS installed (after trying an external one, or after a disconnect)."""
         if (blocked := _guard(request, launcher)) is not None:
             return blocked
+        if config.SHARED_HOME:
+            return _error(409, "shared_home", SHARED_HOME_REFUSAL)
         if not hermes_setup.installed():
             return _error(409, "not_installed", "Hermes is not installed here yet.")
         await asyncio.to_thread(hermes_setup.apply, launcher.updater.log.write, managed=True, persona=False)

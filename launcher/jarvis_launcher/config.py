@@ -55,3 +55,31 @@ AUTO_UPDATE_HOUR_DEFAULT = int(os.environ.get("JARVIS_AUTO_UPDATE_HOUR", "4"))
 
 # How long a freshly started or updated Hermes gets to answer /health with the connector loaded.
 HEALTH_TIMEOUT_SECONDS = int(os.environ.get("JARVIS_HEALTH_TIMEOUT", "240"))
+
+
+def _flag(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+# --- Hermes as a TrueNAS app (truenas.py) ---------------------------------------------------------------------------
+# An external Hermes that runs as a TrueNAS app: the Updates card checks, upgrades and rolls back that app through the
+# TrueNAS API. The key belongs to a TrueNAS user with only the APPS_WRITE role. It is set in this container's
+# environment and never written to the data volume, which the Hermes agent can read.
+TRUENAS_URL = os.environ.get("JARVIS_TRUENAS_URL", "").strip()              # wss://<nas>/api/current
+TRUENAS_API_KEY = os.environ.get("JARVIS_TRUENAS_API_KEY", "").strip()
+TRUENAS_APP = os.environ.get("JARVIS_TRUENAS_APP", "").strip()              # the app's name in TrueNAS, e.g. hermes
+# The NAS's certificate is usually self-signed: pin it (SHA-256 of the DER certificate, hex, colons allowed).
+TRUENAS_CERT_SHA256 = os.environ.get("JARVIS_TRUENAS_CERT_SHA256", "").strip()
+
+# The external Hermes uses this container's HERMES_HOME (one folder mounted into both containers, so both see the same
+# memory, chats and skills). JARVIS then keeps the connector and the voice runtime in that folder current.
+SHARED_HOME = _flag("JARVIS_SHARED_HOME")
+# The voice runtime (this image's /opt/omnivoice, /opt/pocket-tts, /opt/piper-voices), copied here for a Hermes in
+# another container, which mounts each folder back at its /opt path (the interpreter in it has absolute paths).
+RUNTIME_DIR = _path("JARVIS_RUNTIME_DIR", str(STATE_DIR / "runtime"))
+RUNTIME_SOURCES = ("/opt/omnivoice", "/opt/pocket-tts", "/opt/piper-voices")
+
+# The browser desktop's Chromium for a Hermes in another container: a DevTools proxy listening on host:port (cdp.py).
+# Off when empty. Listen only on a private network the two containers share: DevTools has no authentication.
+CDP_PROXY_LISTEN = os.environ.get("JARVIS_CDP_PROXY", "").strip()
+CDP_UPSTREAM = os.environ.get("JARVIS_CDP_UPSTREAM", "http://127.0.0.1:9222").rstrip("/")

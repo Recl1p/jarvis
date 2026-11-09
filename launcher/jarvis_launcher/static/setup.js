@@ -222,19 +222,21 @@
   // --- connected -----------------------------------------------------------------------------------------------
   function renderConnected() {
     if (!current) return;
-    const h = current.hermes, managed = current.mode === 'managed';
-    $('s-mode').textContent = managed ? 'Installed by JARVIS' : 'Your own Hermes';
+    const h = current.hermes, managed = current.mode === 'managed', u = current.updates;
+    const app = u.kind === 'truenas' ? u.truenas_app : '';
+    $('s-mode').textContent = managed ? 'Installed by JARVIS'
+      : app ? `Your own Hermes (TrueNAS app ${app}${h.shared_home ? ', same data folder as JARVIS' : ''})` : 'Your own Hermes';
     $('s-url').textContent = managed ? 'inside this container' : h.url;
     $('s-version').textContent = h.version || '—';
     $('s-health').textContent = h.healthy ? 'Running' : managed && !h.installed ? 'Not installed' : 'Not answering';
     $('s-health').className = h.healthy ? 'good' : 'bad';
     const conn = current.connector;
-    $('s-connector').textContent = managed ? `${conn.installed || '—'}${conn.installed && conn.installed !== conn.bundled ? ` (JARVIS ships ${conn.bundled})` : ''}` : `JARVIS ships ${conn.bundled}`;
-    $('updates-card').hidden = !managed;
+    $('s-connector').textContent = managed || h.shared_home ? `${conn.installed || '—'}${conn.installed && conn.installed !== conn.bundled ? ` (JARVIS ships ${conn.bundled})` : ''}` : `JARVIS ships ${conn.bundled}`;
+    $('updates-card').hidden = !u.kind;
+    $('u-what').textContent = app ? `new versions of the TrueNAS app ${app}` : 'new stable Hermes releases';
     $('persona-card').hidden = !managed;
     if (!$('persona-status').textContent && current.persona) $('persona-status').textContent = 'Applied: Hermes answers as JARVIS.';
-    $('btn-use-managed').hidden = managed || !h.installed;
-    const u = current.updates;
+    $('btn-use-managed').hidden = managed || !h.installed || h.shared_home;
     if (!$('u-hour').options.length) {
       for (let i = 0; i < 24; i++) $('u-hour').add(new Option(`${String(i).padStart(2, '0')}:00`, i));
     }

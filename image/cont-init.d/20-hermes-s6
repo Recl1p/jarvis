@@ -1,18 +1,35 @@
 #!/command/with-contenv sh
-# Hermes supervises its own gateway as an s6 service it registers in /run/service (like Hermes's own image), so the
-# hermes user needs the scan directory and its control files. On a container restart, Hermes's boot reconciler puts
-# back the gateways that were running (it reads the desired state Hermes saved; a stopped gateway stays stopped).
+# Hermes supervises its own gateway as an s6 service it registers itself (like Hermes's own image), so the hermes user
+# needs a scan directory and its control files:
+#   - Hermes 0.23 and later: /run/hermes-service, watched by a nested s6-svscan running as hermes (the
+#     hermes-gateways service);
+#   - before 0.23: /run/service, the root scan directory, handed to hermes.
+# On a container restart Hermes's boot reconciler puts back the gateways that were running (it reads the desired
+# state Hermes saved; a stopped gateway stays stopped). Only for a Hermes JARVIS installed (state "managed"): an old
+# install left in a data folder that now belongs to an external Hermes (JARVIS_SHARED_HOME) must never start.
 set -eu
+home="${HERMES_HOME:-/opt/data}"
 chown hermes:hermes /run/service 2>/dev/null || true
 if [ -d /run/service/.s6-svscan ]; then
     for entry in control lock; do
         [ -e "/run/service/.s6-svscan/$entry" ] && chown hermes:hermes "/run/service/.s6-svscan/$entry" 2>/dev/null || true
     done
 fi
-hermes_bin="${HERMES_HOME:-/opt/data}/.local/bin/hermes"
-if [ -x "$hermes_bin" ]; then
+mkdir -p /run/hermes-service
+chown hermes:hermes /run/hermes-service
+chmod 0755 /run/hermes-service
+
+mode=$(s6-setuidgid hermes python3 -c 'import sys; sys.path.insert(0, "/opt/jarvis/launcher")
+from jarvis_launcher import state
+print(state.load().get("mode") or "")' 2>/dev/null) || mode=""
+hermes_bin="$home/.local/bin/hermes"
+if [ "$mode" = managed ] && [ -x "$hermes_bin" ]; then
     # This image's connector first, so the gateway the reconciler starts loads it (not the one before an update).
     s6-setuidgid hermes python3 -m jarvis_launcher.prestart || true
     s6-setuidgid hermes "$hermes_bin" --run-module hermes_cli.container_boot \
         || echo "[jarvis] Hermes's boot reconciler failed; the launcher starts the gateway itself" >&2
+elif [ "$mode" = external ] && [ "${JARVIS_SHARED_HOME:-0}" = 1 ]; then
+    # The external Hermes uses this data folder: give it this image's connector now; the launcher restarts that Hermes
+    # if it still runs another version.
+    s6-setuidgid hermes python3 -m jarvis_launcher.prestart || true
 fi
