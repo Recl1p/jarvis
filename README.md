@@ -47,6 +47,19 @@ browser ── :8642 ──► │ launcher (launcher/): the password first (aut
   address and API key, or gives you a prompt to paste into your Hermes. That prompt has your Hermes run
   `/jarvis/connect.sh`, which installs the connector, turns on its API server and pairs back to JARVIS with a one-time
   code. **Test connection** (setup screen, and step 1 of the dashboard's GUIDE) checks every link in the chain.
+- **Hermes as a TrueNAS app** (external mode, since 2.2): Hermes runs as the TrueNAS app `hermes-agent`, and JARVIS
+  is its front end. Set in JARVIS's environment:
+  - `JARVIS_TRUENAS_URL` (`wss://<nas>/api/current`), `JARVIS_TRUENAS_APP` (the app's name) and
+    `JARVIS_TRUENAS_API_KEY` (a TrueNAS user with only the APPS_WRITE role; keep it out of the data volume, which the
+    agent can read). `JARVIS_TRUENAS_CERT_SHA256` pins a self-signed certificate. The Updates card then checks,
+    upgrades (with host-path snapshots), health-checks and rolls back the app through the TrueNAS API.
+  - `JARVIS_SHARED_HOME=1` when the app uses JARVIS's data folder as its home, so both share one memory, chats and
+    skills. JARVIS then keeps the connector in it current, copies its voice runtime to `jarvis/runtime/` for the app to
+    mount at `/opt/omnivoice`, `/opt/pocket-tts` and `/opt/piper-voices`, restarts the app when either changes, and
+    refuses to run a Hermes of its own there.
+  - `JARVIS_CDP_PROXY=0.0.0.0:9223` lets the app's browser drive the browser desktop's Chromium
+    (`browser.cdp_url: http://<jarvis>:9223`), over a private Docker network the two containers share.
+  `deployment/nas/compose.yaml` is a complete example, and `HANDOFF.md` entry 38 has the app's settings and gotchas.
 
 ## Troubleshooting
 

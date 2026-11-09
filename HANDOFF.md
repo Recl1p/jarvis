@@ -2174,3 +2174,75 @@ from their own clips through Pocket TTS (their cloning weights are in the data v
   debugging — ask the user to reboot the host. Also note: containers do not survive a host reboot
   on this machine (no restart-on-boot linger service enabled for rootless Podman) — always check
   `docker ps -a` for `jarvis-hermes` after any reboot and recreate it if it shows `Exited`.
+
+### 38. 2.2.0: Hermes as the TrueNAS app on JARVIS's data folder; the Hermes 0.23 gateway layout (2026-11-09)
+
+**Why the "Update Hermes" button rolled back (2.1.1).** Hermes 0.23.0 moved its per-profile gateway s6 slots from
+`/run/service` to `/run/hermes-service`, watched by a nested `s6-svscan` running as hermes (its image's
+`profile-gateways` service; `cont-init.d/02-reconcile-profiles` creates the directory). The JARVIS image prepared only
+`/run/service`, so after `hermes update` every `hermes gateway start` failed with `[Errno 13] Permission denied:
+'/run/hermes-service'` (visible only in `docker logs`; `updates.log` said "Hermes is not answering yet") and JARVIS
+rolled back. The rollback restored the code but not `config.yaml`: 0.23's v51 -> v52 migration had removed
+`browser.backend: off` (0.22.5 then ran in Browser Use CLI mode). The 04:00 schedule would have retried every night.
+
+**2.2.0 (launcher, image):**
+- `image/s6-rc.d/hermes-gateways`: the nested scan directory, as hermes. `20-hermes-s6` creates `/run/hermes-service`
+  and runs Hermes's boot reconciler only in managed mode. `managed.py` looks for the slot in both places; the update
+  log keeps `hermes gateway start`'s error. `hermes_setup.apply` sets `browser.backend: off` only before 0.23 (read from
+  the checkout's `install-stamp.json` `baseVersion`; `pyproject.toml` says 0.0.0); 0.23's browser_exec honours
+  `browser.cdp_url`.
+- Schedule: local dates (the hour is local, `last_check` UTC; before, a check after 19:00 EST counted as "tomorrow"),
+  and a release whose last attempt failed (`target` recorded) is not retried by the schedule; Update now still is.
+- TrueNAS app mode (`truenas.py`): JSON-RPC 2.0 over `wss://<nas>/api/current`, `auth.login_with_api_key`, jobs polled
+  through `core.get_jobs`. `app.upgrade {app_version: latest, snapshot_hostpaths: true}`, health check (the connector's
+  authenticated check), `app.rollback {app_version: <before>, rollback_snapshot: true}` when unhealthy (not when the
+  upgrade job itself failed: the app keeps its version), `app.redeploy` to load a new connector or voice runtime. wss
+  only (TrueNAS revokes a key used over http); `JARVIS_TRUENAS_CERT_SHA256` pins the self-signed certificate
+  (`aiohttp.Fingerprint`; a mismatch says the certificate was renewed).
+- `JARVIS_SHARED_HOME`: prestart copies the connector into the shared home; `cont-init.d/25-jarvis-runtime` copies
+  `/opt/omnivoice` (its own Python 3.12, so the app must mount it at the same path), `/opt/pocket-tts` and
+  `/opt/piper-voices` to `jarvis/runtime/` when the tree's stamp changes (old copy kept as `*.old` until the app has
+  restarted, `.changed` marker); the launcher redeploys the app when the running connector version differs or the
+  marker exists. Install and "use the Hermes JARVIS installed" are refused (409 `shared_home`).
+- `cdp.py` (`JARVIS_CDP_PROXY`): headed Chromium binds DevTools to 127.0.0.1 whatever `--remote-debugging-address`
+  says, and rejects a Host that isn't an IP or localhost; the proxy sends Chromium's own Host and rewrites the
+  addresses in its JSON answers to the client's Host. No Origin is passed on. Never publish it.
+- Connector: `features.browser_desktop` is also true with `JARVIS_BROWSER_DESKTOP=1` (set in the Hermes app).
+- Tests: `launcher/tests/test_truenas.py` (a stand-in TrueNAS JSON-RPC server: client, upgrade, rollback, failed job,
+  nothing to upgrade, schedule rules, the setup API, the shared-home guards, the DevTools proxy); 85 launcher tests pass.
+
+**The NAS (live since 2026-11-09 06:40 UTC):**
+- TrueNAS app `hermes` = catalog `hermes-agent` 1.0.38 (community train) = `nousresearch/hermes-agent:v0.23.0`. Values
+  (all needed): data host path `/mnt/SSDCACHE256/jarvis/data`; run_as 10001:10001 (the folder's owner; the entrypoint
+  usermods hermes and doesn't chown); `gateway_key` = the data's `API_SERVER_KEY` (the env var wins over `.env`, so an
+  empty key would break it); gateway port 8643 exposed (not published); dashboard 30433 published with the app's login
+  (user `abdullah`); network `jarvis-hermes` (external, `docker network create jarvis-hermes`) with alias `hermes`;
+  extra mounts: the three runtime folders read-only at their `/opt` paths, and `files/{Documents,Downloads}` at both
+  `/var/home/akhdaier/...` and `/home/akhdaier/...`; env `HERMES_TIMEZONE=America/New_York` (the library sets TZ from
+  the NAS, America/Los_Angeles, and refuses an override; Hermes's cron uses its own clock, so the jobs keep their
+  times), `JARVIS_BROWSER_DESKTOP=1`, and **`HERMES_GATEWAY_NO_SUPERVISE=1`**; label
+  `com.centurylinklabs.watchtower.enable=false`; limits 4 CPUs / 8 GB.
+- Why NO_SUPERVISE: the app grants CHOWN, SETUID, SETGID and DAC_OVERRIDE, not FOWNER, so `02-reconcile-profiles`
+  dies at `chmod 0755 /run/hermes-service` (after chowning it to hermes) before publishing the slot; `gateway run` then
+  registers its own slot and starts it at once, racing the supervisor ("s6-svc: supervisor not listening", rc 102),
+  and on a restart it lost. With the opt-out the gateway is the container's main process and Docker restarts it.
+  Nothing in the connector restarts the gateway itself.
+- In that mode lazy installs are off for the gateway: the voice extras were installed explicitly,
+  `hermes pm install --extra piper --extra edge-tts` (into `data/installs/<id>/environments/`, persistent), then
+  `app.redeploy`. The official image has no `pdftotext`: the partly-scanned-PDF text fallback in `pdf_markdown` is
+  off; `anydoc` reads PDFs as before.
+- JARVIS stack: `deployment/nas/compose.yaml` (shared home, CDP proxy, TrueNAS settings, network). The key of TrueNAS
+  user `jarvis-updater` (no password, no shell, group `jarvis-updater`, privilege "JARVIS: update the Hermes app" with
+  only APPS_WRITE) is in the stack's `.env` (0600). Until 2.2.0 is on ghcr.io the `.env` also sets
+  `JARVIS_IMAGE=localhost/jarvis:2.2.0` (built on the NAS from this commit); remove that line once it is published.
+- Cutover: snapshot `SSDCACHE256/jarvis@pre-cutover-20261108-2239`; the old managed install (`hermes-agent/`,
+  `installs/6458e7ce4776354a`, `tools/`, `.local/bin/hermes*`) was removed, so no older JARVIS image can start a second
+  gateway from it. Before/after: 98 sessions, 3026 messages, 4 cron jobs, 6 notes, same hashes for MEMORY.md, USER.md,
+  SOUL.md, auth.json and .env. The 2.1.1 stack files are kept as `compose.yaml.before-hermes-app-20261108-2239`.
+- Rehearsed first on a ZFS clone with Telegram and cron off and the model on `tests/e2e/mock_llm.py`: the connection
+  checks, the Updates card through the real TrueNAS API with the restricted key, three redeploys, Pocket and Piper
+  speaking inside the app, `browser_exec` opening a tab in JARVIS's desktop Chromium through the proxy, chat, the
+  Hermes dashboard login, the CLI (`docker exec -it --user hermes ix-hermes-hermes-agent-1 hermes`), cron times.
+- Not tested: a real app upgrade (the catalog only has 1.0.38); the first one will be Hermes's next release.
+- The NAS's certificate (`truenas_default`) expires 2026-12-17; when TrueNAS renews it, update the pin in compose.yaml
+  or `.env`.
