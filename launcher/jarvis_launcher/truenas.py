@@ -81,6 +81,11 @@ class Client:
             self._ws = await self._session.ws_connect(self.url, heartbeat=30, max_msg_size=64 * 1024 * 1024, **options)
             if await self.call("auth.login_with_api_key", self.key) is not True:
                 raise TrueNASError("TrueNAS did not accept JARVIS's API key.")
+        except aiohttp.ServerFingerprintMismatch as exc:
+            await self._session.close()
+            raise TrueNASError("The NAS's certificate is not the one JARVIS_TRUENAS_CERT_SHA256 pins (TrueNAS renews "
+                               "its self-signed certificate when it expires). Put the new certificate's SHA-256 in "
+                               "JARVIS_TRUENAS_CERT_SHA256.") from exc
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
             await self._session.close()
             raise TrueNASError(f"Can't reach the TrueNAS API at {self.url}: {type(exc).__name__}: {exc}"[:400]) from exc
